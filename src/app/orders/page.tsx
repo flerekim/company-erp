@@ -1,4 +1,6 @@
 // src/app/orders/page.tsx
+// 수주 관리 페이지 - 오류 수정 및 최적화
+
 "use client"
 
 import { useState } from "react"
@@ -29,12 +31,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  Eye, 
-  Edit, 
+import {
+  Plus,
+  Search,
+  Filter,
+  Eye,
+  Edit,
   MoreHorizontal,
   MapPin,
   Users
@@ -48,59 +50,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// 타입 정의 (페이지 내부에서 정의)
+// 타입 정의 - 간소화
 type ClientType = 'government' | 'private'
 type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'cancelled'
 type OrderType = 'new' | 'change1' | 'change2' | 'change3'
 type TransportType = 'onsite' | 'transport'
 
-interface Company {
-  id: string
-  company_name: string
-  company_type: ClientType
-  industry: string
-  status: string
-  credit_rating: string
-  created_at: string
-  updated_at: string
-}
-
-interface Employee {
-  id: string
-  employee_number: string
-  name: string
-  department: string
-  role: string
-  status: string
-  created_at: string
-  updated_at: string
-}
-
 interface Order {
   id: string
   order_number: string
-  company_id: string
   project_name: string
   client_type: ClientType
+  company_name: string
   contract_date?: string
   contract_amount: number
-  tax_amount: number
-  total_amount: number
   order_type: OrderType
-  original_order_id?: string
   transport_type?: TransportType
   remediation_method?: string
   contamination_info?: string
   verification_company?: string
   status: OrderStatus
-  priority: string
   progress_percentage: number
-  created_at: string
-  updated_at: string
-  notes?: string
-  company?: Company
-  primary_manager?: Employee
-  secondary_manager?: Employee
+  primary_manager?: string
+  secondary_manager?: string
 }
 
 // 라벨 상수
@@ -130,7 +102,7 @@ const TRANSPORT_TYPE_LABELS: Record<TransportType, string> = {
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
   contracted: 'bg-blue-100 text-blue-800',
-  in_progress: 'bg-yellow-100 text-yellow-800', 
+  in_progress: 'bg-yellow-100 text-yellow-800',
   completed: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800'
 }
@@ -140,233 +112,88 @@ const CLIENT_TYPE_COLORS: Record<ClientType, string> = {
   private: 'bg-cyan-100 text-cyan-800'
 }
 
-// 실제 엑셀 데이터 기반 임시 데이터
+// 실제 엑셀 데이터 기반 임시 데이터 - 간소화
 const ordersData: Order[] = [
   {
     id: "1",
     order_number: "ORD-2024-001",
-    company_id: "comp1",
     project_name: "24-A-OO부대 토양오염정화공사(1517)",
     client_type: "government",
+    company_name: "제2218부대",
     contract_date: "2024-11-28",
     contract_amount: 1063758000,
-    tax_amount: 106375800,
-    total_amount: 1170133800,
     order_type: "new",
     transport_type: "onsite",
     remediation_method: "토양경작법",
-    contamination_info: "",
-    verification_company: "",
     status: "in_progress",
-    priority: "normal",
     progress_percentage: 65,
-    created_at: "2024-11-28T00:00:00Z",
-    updated_at: "2024-11-28T00:00:00Z",
-    company: { 
-      id: "comp1", 
-      company_name: "제2218부대", 
-      company_type: "government",
-      industry: "국방부",
-      status: "active",
-      credit_rating: "A",
-      created_at: "",
-      updated_at: ""
-    },
-    primary_manager: { 
-      id: "emp1", 
-      employee_number: "EMP-001",
-      name: "이대룡", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    },
-    secondary_manager: { 
-      id: "emp2", 
-      employee_number: "EMP-002",
-      name: "백승호", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    }
+    primary_manager: "이대룡",
+    secondary_manager: "백승호"
   },
   {
     id: "2",
     order_number: "ORD-2025-002",
-    company_id: "comp2",
     project_name: "OO지역 토양오염 정화공사",
     client_type: "government",
+    company_name: "육군5378부대",
     contract_date: "2025-03-27",
     contract_amount: 85105000,
-    tax_amount: 8510500,
-    total_amount: 93615500,
     order_type: "new",
     transport_type: "transport",
-    remediation_method: "",
-    contamination_info: "",
-    verification_company: "",
     status: "contracted",
-    priority: "normal",
     progress_percentage: 0,
-    created_at: "2025-03-27T00:00:00Z",
-    updated_at: "2025-03-27T00:00:00Z",
-    company: { 
-      id: "comp2", 
-      company_name: "육군5378부대", 
-      company_type: "government",
-      industry: "국방부",
-      status: "active",
-      credit_rating: "A",
-      created_at: "",
-      updated_at: ""
-    },
-    primary_manager: { 
-      id: "emp1", 
-      employee_number: "EMP-001",
-      name: "이대룡", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    },
-    secondary_manager: { 
-      id: "emp2", 
-      employee_number: "EMP-002",
-      name: "백승호", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    }
+    primary_manager: "이대룡",
+    secondary_manager: "백승호"
   },
   {
     id: "3",
     order_number: "ORD-2021-003",
-    company_id: "comp3",
     project_name: "광명시흥 일반산업단지 및 유통단지 토양오염 정화용역",
     client_type: "private",
+    company_name: "한국토지주택공사",
     contract_date: "2021-05-14",
     contract_amount: 4957675600,
-    tax_amount: 495767560,
-    total_amount: 5453443160,
     order_type: "new",
     transport_type: "transport",
     remediation_method: "토양세척법",
-    contamination_info: "",
     verification_company: "울산과학대학교 산학협력단",
     status: "completed",
-    priority: "high",
     progress_percentage: 100,
-    created_at: "2021-05-14T00:00:00Z",
-    updated_at: "2021-05-14T00:00:00Z",
-    company: { 
-      id: "comp3", 
-      company_name: "한국토지주택공사", 
-      company_type: "private",
-      industry: "건설업",
-      status: "active",
-      credit_rating: "A+",
-      created_at: "",
-      updated_at: ""
-    },
-    primary_manager: { 
-      id: "emp3", 
-      employee_number: "EMP-003",
-      name: "박찬수", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    }
+    primary_manager: "박찬수"
   },
   {
     id: "4",
     order_number: "ORD-2024-004",
-    company_id: "comp4",
     project_name: "숭인지하차도 및 연결도로 건설공사 오염토양 정화처리용역",
     client_type: "government",
+    company_name: "인천광역시 종합건설본부",
     contract_date: "2024-10-25",
     contract_amount: 12759450,
-    tax_amount: 1275945,
-    total_amount: 14035395,
     order_type: "new",
     transport_type: "transport",
     remediation_method: "토양경작법, 토양세척법",
     contamination_info: "TPH(3,915mg/kg)",
     verification_company: "재단법인 경기환경과학연구원",
     status: "in_progress",
-    priority: "normal",
     progress_percentage: 40,
-    created_at: "2024-10-25T00:00:00Z",
-    updated_at: "2024-10-25T00:00:00Z",
-    company: { 
-      id: "comp4", 
-      company_name: "인천광역시 종합건설본부", 
-      company_type: "government",
-      industry: "공공기관",
-      status: "active",
-      credit_rating: "A",
-      created_at: "",
-      updated_at: ""
-    },
-    primary_manager: { 
-      id: "emp4", 
-      employee_number: "EMP-004",
-      name: "최진우", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    }
+    primary_manager: "최진우"
   },
   {
     id: "5",
     order_number: "ORD-2025-005",
-    company_id: "comp4",
-    project_name: "숭인지하차도 및 연결도로 건설공사 오염토양 정화처리용역",
+    project_name: "숭인지하차도 연결도로 건설공사 오염토양 정화처리용역 (1차변경)",
     client_type: "government",
+    company_name: "인천광역시 종합건설본부",
     contract_date: "2025-01-16",
     contract_amount: 5983450,
-    tax_amount: 598345,
-    total_amount: 6581795,
     order_type: "change1",
-    original_order_id: "4",
     transport_type: "transport",
     remediation_method: "토양경작법, 토양세척법",
     contamination_info: "TPH(3,915mg/kg)",
     verification_company: "재단법인 경기환경과학연구원",
     status: "contracted",
-    priority: "normal",
     progress_percentage: 0,
-    created_at: "2025-01-16T00:00:00Z",
-    updated_at: "2025-01-16T00:00:00Z",
-    company: { 
-      id: "comp4", 
-      company_name: "인천광역시 종합건설본부", 
-      company_type: "government",
-      industry: "공공기관",
-      status: "active",
-      credit_rating: "A",
-      created_at: "",
-      updated_at: ""
-    },
-    primary_manager: { 
-      id: "emp4", 
-      employee_number: "EMP-004",
-      name: "최진우", 
-      department: "기술부",
-      role: "engineer",
-      status: "active",
-      created_at: "",
-      updated_at: ""
-    }
+    primary_manager: "최진우"
   }
 ]
 
@@ -376,43 +203,25 @@ export default function OrdersPage() {
   const [clientTypeFilter, setClientTypeFilter] = useState<string>("all")
   const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all")
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [orders, setOrders] = useState<Order[]>(ordersData)
 
   // 새 수주 등록 처리 (임시)
   const handleNewOrder = async () => {
     try {
-      // 임시 수주 데이터 생성
       const newOrder: Order = {
         id: String(orders.length + 1),
         order_number: `ORD-${new Date().getFullYear()}-${String(orders.length + 1).padStart(3, '0')}`,
-        company_id: "comp1",
         project_name: "새로운 토양정화 프로젝트",
         client_type: "government",
+        company_name: "테스트 회사",
         contract_date: new Date().toISOString().split('T')[0],
         contract_amount: 10000000,
-        tax_amount: 1000000,
-        total_amount: 11000000,
         order_type: "new",
         transport_type: "transport",
         remediation_method: "토양경작법",
-        contamination_info: "",
-        verification_company: "",
         status: "contracted",
-        priority: "normal",
         progress_percentage: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        company: {
-          id: "comp1",
-          company_name: "테스트 회사",
-          company_type: "government",
-          industry: "공공기관",
-          status: "active",
-          credit_rating: "A",
-          created_at: "",
-          updated_at: ""
-        }
+        primary_manager: "담당자"
       }
 
       setOrders(prev => [...prev, newOrder])
@@ -428,12 +237,13 @@ export default function OrdersPage() {
   const filteredOrders = orders.filter(order => {
     const matchesSearch = 
       order.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (order.company?.company_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.order_number.toLowerCase().includes(searchTerm.toLowerCase())
+
     const matchesStatus = statusFilter === "all" || order.status === statusFilter
     const matchesClientType = clientTypeFilter === "all" || order.client_type === clientTypeFilter
     const matchesOrderType = orderTypeFilter === "all" || order.order_type === orderTypeFilter
-    
+
     return matchesSearch && matchesStatus && matchesClientType && matchesOrderType
   })
 
@@ -514,7 +324,7 @@ export default function OrdersPage() {
             <div className="text-2xl font-bold">{stats.total}건</div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">관수</CardTitle>
@@ -523,7 +333,7 @@ export default function OrdersPage() {
             <div className="text-2xl font-bold text-purple-600">{stats.by_client_type.government}건</div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">민수</CardTitle>
@@ -582,6 +392,7 @@ export default function OrdersPage() {
                 className="pl-10"
               />
             </div>
+
             <Select value={clientTypeFilter} onValueChange={setClientTypeFilter}>
               <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="민관구분" />
@@ -592,6 +403,7 @@ export default function OrdersPage() {
                 <SelectItem value="private">민수</SelectItem>
               </SelectContent>
             </Select>
+
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="상태" />
@@ -604,6 +416,7 @@ export default function OrdersPage() {
                 <SelectItem value="cancelled">취소</SelectItem>
               </SelectContent>
             </Select>
+
             <Select value={orderTypeFilter} onValueChange={setOrderTypeFilter}>
               <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="구분" />
@@ -656,7 +469,7 @@ export default function OrdersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium max-w-[200px] truncate">
-                      {order.company?.company_name || '-'}
+                      {order.company_name}
                     </TableCell>
                     <TableCell className="max-w-[300px]">
                       <div className="truncate" title={order.project_name}>
@@ -702,9 +515,9 @@ export default function OrdersPage() {
                     </TableCell>
                     <TableCell>
                       <div className="text-sm">
-                        <div className="font-medium">{order.primary_manager?.name || '-'}</div>
+                        <div className="font-medium">{order.primary_manager || '-'}</div>
                         {order.secondary_manager && (
-                          <div className="text-gray-500">/ {order.secondary_manager.name}</div>
+                          <div className="text-gray-500">/ {order.secondary_manager}</div>
                         )}
                       </div>
                     </TableCell>
@@ -734,7 +547,7 @@ export default function OrdersPage() {
                             수정하기
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="text-red-600"
                             onClick={() => {
                               if (confirm("정말로 이 수주를 삭제하시겠습니까?")) {

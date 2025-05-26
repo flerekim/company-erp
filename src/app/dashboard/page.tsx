@@ -1,17 +1,20 @@
 // src/app/dashboard/page.tsx
+// 대시보드 페이지 - 오류 수정 및 안정성 향상
+
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { 
-  FileText, 
-  CreditCard, 
-  TrendingUp, 
+import {
+  FileText,
+  CreditCard,
+  TrendingUp,
   AlertCircle,
   Plus,
   Eye
 } from "lucide-react"
+import Link from "next/link"
 
 // 임시 데이터 (나중에 Supabase에서 가져올 예정)
 const dashboardStats = {
@@ -22,14 +25,14 @@ const dashboardStats = {
 }
 
 const recentOrders = [
-  { id: 1, client: "ABC 건설", project: "아파트 시공", amount: 50000000, status: "진행중", date: "2024-05-20" },
-  { id: 2, client: "XYZ 개발", project: "오피스텔 건설", amount: 75000000, status: "견적", date: "2024-05-18" },
-  { id: 3, client: "123 기업", project: "공장 신축", amount: 120000000, status: "완료", date: "2024-05-15" },
+  { id: 1, client: "제2218부대", project: "24-A-OO부대 토양오염정화공사", amount: 1063758000, status: "진행중", date: "2024-11-28" },
+  { id: 2, client: "육군5378부대", project: "OO지역 토양오염 정화공사", amount: 85105000, status: "계약", date: "2025-03-27" },
+  { id: 3, client: "한국토지주택공사", project: "광명시흥 일반산업단지 토양오염 정화용역", amount: 4957675600, status: "완료", date: "2021-05-14" },
 ]
 
 const overdueReceivables = [
-  { id: 1, client: "ABC 건설", amount: 5000000, daysOverdue: 15 },
-  { id: 2, client: "DEF 회사", amount: 3500000, daysOverdue: 8 },
+  { id: 1, client: "제2218부대", amount: 50000000, daysOverdue: 15 },
+  { id: 2, client: "인천광역시 종합건설본부", amount: 35000000, daysOverdue: 8 },
 ]
 
 export default function DashboardPage() {
@@ -40,19 +43,33 @@ export default function DashboardPage() {
     }).format(amount)
   }
 
+  // 상태별 배지 색상 설정
+  const getStatusBadgeColor = (status: string) => {
+    switch (status) {
+      case "완료": return "bg-green-100 text-green-800"
+      case "진행중": return "bg-blue-100 text-blue-800"
+      case "계약": return "bg-yellow-100 text-yellow-800"
+      case "보류": return "bg-gray-100 text-gray-800"
+      case "취소": return "bg-red-100 text-red-800"
+      default: return "bg-gray-100 text-gray-800"
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">대시보드</h1>
-          <p className="text-gray-600 mt-1">수주 및 채권 현황을 한눈에 확인하세요</p>
+          <p className="text-gray-600 mt-1">토양오염정화공사 수주 및 채권 현황을 한눈에 확인하세요</p>
         </div>
         <div className="flex space-x-2">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            새 수주 등록
-          </Button>
+          <Link href="/orders">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              새 수주 등록
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -123,10 +140,12 @@ export default function DashboardPage() {
                 <CardTitle>최근 수주 현황</CardTitle>
                 <CardDescription>최근 등록된 수주 건들입니다</CardDescription>
               </div>
-              <Button variant="outline" size="sm">
-                <Eye className="mr-2 h-4 w-4" />
-                전체보기
-              </Button>
+              <Link href="/orders">
+                <Button variant="outline" size="sm">
+                  <Eye className="mr-2 h-4 w-4" />
+                  전체보기
+                </Button>
+              </Link>
             </div>
           </CardHeader>
           <CardContent>
@@ -135,19 +154,12 @@ export default function DashboardPage() {
                 <div key={order.id} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex-1">
                     <div className="font-medium">{order.client}</div>
-                    <div className="text-sm text-gray-600">{order.project}</div>
+                    <div className="text-sm text-gray-600 truncate max-w-[250px]">{order.project}</div>
                     <div className="text-xs text-gray-500">{order.date}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-medium">{formatCurrency(order.amount)}</div>
-                    <Badge 
-                      variant={
-                        order.status === "완료" ? "default" : 
-                        order.status === "진행중" ? "secondary" : 
-                        "outline"
-                      }
-                      className="mt-1"
-                    >
+                    <Badge className={getStatusBadgeColor(order.status)}>
                       {order.status}
                     </Badge>
                   </div>
