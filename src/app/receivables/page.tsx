@@ -3,7 +3,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -57,6 +57,8 @@ import { PaymentForm } from "@/components/forms/payment-form"
 import { OverdueAlerts } from "@/components/overdue/overdue-alerts"
 import { OverdueLevels } from "@/components/overdue/overdue-levels"
 import { OverdueDetails } from "@/components/overdue/overdue-details"
+import { receivableService } from "@/lib/supabase/database"
+import { paymentService } from "@/lib/supabase/database"
 
 // 라벨 상수
 const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
@@ -114,125 +116,6 @@ const calculateOverdueDays = (dueDate: string): number => {
   return Math.max(0, diffDays)
 }
 
-// 임시 데이터 (나중에 Supabase에서 가져올 예정)
-const receivables: Receivable[] = [
-  {
-    id: "1",
-    receivable_number: "REC-2024-001",
-    order_id: "ORD-2024-001",
-    order_number: "ORD-2024-001",
-    project_name: "24-A-OO부대 토양오염정화공사",
-    company_name: "제2218부대",
-    client_type: "government",
-    contract_amount: 1063758000,
-    tax_amount: 106375800,
-    total_amount: 1170133800,
-    paid_amount: 585066900,
-    remaining_amount: 585066900,
-    payment_terms: "net_30",
-    due_date: "2024-12-28",
-    payment_due_days: 30,
-    payment_status: "partial",
-    overdue_days: 0,
-    overdue_level: "normal",
-    primary_manager: "이대룡",
-    created_at: "2024-11-28",
-    updated_at: "2024-11-28"
-  },
-  {
-    id: "2",
-    receivable_number: "REC-2024-002",
-    order_id: "ORD-2024-002",
-    order_number: "ORD-2024-002",
-    project_name: "OO지역 토양오염 정화공사",
-    company_name: "한국토지주택공사",
-    client_type: "private",
-    contract_amount: 85105000,
-    tax_amount: 8510500,
-    total_amount: 93615500,
-    paid_amount: 0,
-    remaining_amount: 93615500,
-    payment_terms: "net_60",
-    due_date: "2025-01-27",
-    payment_due_days: 60,
-    payment_status: "unpaid",
-    overdue_days: 0,
-    overdue_level: "normal",
-    primary_manager: "박찬수",
-    created_at: "2024-11-28",
-    updated_at: "2024-11-28"
-  },
-  {
-    id: "3",
-    receivable_number: "REC-2023-001",
-    order_id: "ORD-2023-001",
-    order_number: "ORD-2023-001",
-    project_name: "OO산단 토양정화 시범사업",
-    company_name: "OO산업단지관리공단",
-    client_type: "private",
-    contract_amount: 250000000,
-    tax_amount: 25000000,
-    total_amount: 275000000,
-    paid_amount: 0,
-    remaining_amount: 275000000,
-    payment_terms: "net_30",
-    due_date: "2023-12-15",
-    payment_due_days: 30,
-    payment_status: "overdue",
-    overdue_days: 120,
-    overdue_level: "longterm",
-    primary_manager: "김철수",
-    created_at: "2023-11-15",
-    updated_at: "2024-03-15"
-  },
-  {
-    id: "4",
-    receivable_number: "REC-2023-002",
-    order_id: "ORD-2023-002",
-    order_number: "ORD-2023-002",
-    project_name: "OO시 토양오염 정화사업",
-    company_name: "OO시청",
-    client_type: "government",
-    contract_amount: 500000000,
-    tax_amount: 50000000,
-    total_amount: 550000000,
-    paid_amount: 0,
-    remaining_amount: 550000000,
-    payment_terms: "net_60",
-    due_date: "2023-10-30",
-    payment_due_days: 60,
-    payment_status: "overdue",
-    overdue_days: 200,
-    overdue_level: "bad",
-    primary_manager: "이영희",
-    created_at: "2023-08-30",
-    updated_at: "2024-03-15"
-  },
-  {
-    id: "5",
-    receivable_number: "REC-2023-003",
-    order_id: "ORD-2023-003",
-    order_number: "ORD-2023-003",
-    project_name: "OO공단 토양정화 사업",
-    company_name: "OO공단",
-    client_type: "private",
-    contract_amount: 180000000,
-    tax_amount: 18000000,
-    total_amount: 198000000,
-    paid_amount: 0,
-    remaining_amount: 198000000,
-    payment_terms: "net_30",
-    due_date: "2023-09-15",
-    payment_due_days: 30,
-    payment_status: "overdue",
-    overdue_days: 240,
-    overdue_level: "bad",
-    primary_manager: "박지성",
-    created_at: "2023-08-15",
-    updated_at: "2024-03-15"
-  }
-]
-
 export default function ReceivablesPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [clientTypeFilter, setClientTypeFilter] = useState<ClientType | "all">("all")
@@ -240,6 +123,23 @@ export default function ReceivablesPage() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
   const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null)
   const [showOverdueDetails, setShowOverdueDetails] = useState(false)
+  const [receivables, setReceivables] = useState<Receivable[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchReceivables = async () => {
+      try {
+        const data = await receivableService.getAll()
+        setReceivables(data)
+      } catch (error) {
+        console.error('채권 데이터 조회 실패:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchReceivables()
+  }, [])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
@@ -305,10 +205,22 @@ export default function ReceivablesPage() {
     ? Math.round((stats.paid_amount / stats.total_amount) * 100) 
     : 0
 
-  const handlePaymentSubmit = (data: any) => {
-    // TODO: Supabase에 입금 내역 저장
-    console.log('입금 처리:', data)
-    setIsPaymentDialogOpen(false)
+  const handlePaymentSubmit = async (data: any) => {
+    try {
+      if (selectedReceivable) {
+        await paymentService.create({
+          ...data,
+          receivable_id: selectedReceivable.id
+        })
+        // 채권 목록 새로고침
+        const updatedReceivables = await receivableService.getAll()
+        setReceivables(updatedReceivables)
+      }
+    } catch (error) {
+      console.error('입금 처리 실패:', error)
+    } finally {
+      setIsPaymentDialogOpen(false)
+    }
   }
 
   return (

@@ -1,7 +1,7 @@
 // src/lib/database.ts
 // 데이터베이스 접근을 위한 유틸리티 함수들
 
-import { supabase } from './supabase/supabase'
+import { supabase } from './supabase'
 import { Receivable, PaymentFormData } from '@/types/receivables'
 
 // 수주 관리 관련 함수들
@@ -62,6 +62,17 @@ export const orderService = {
       .eq('id', id)
     
     if (error) throw error
+  },
+
+  async getLastOrder() {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('order_number', { ascending: false })
+      .limit(1)
+      .single()
+    if (error && error.code !== 'PGRST116') throw error // PGRST116는 결과가 없을 때 발생
+    return { data }
   }
 }
 

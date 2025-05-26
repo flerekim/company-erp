@@ -63,14 +63,6 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold text-gray-900">대시보드</h1>
           <p className="text-gray-600 mt-1">토양오염정화공사 수주 및 채권 현황을 한눈에 확인하세요</p>
         </div>
-        <div className="flex space-x-2">
-          <Link href="/orders">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              새 수주 등록
-            </Button>
-          </Link>
-        </div>
       </div>
 
       {/* 주요 지표 카드 */}
