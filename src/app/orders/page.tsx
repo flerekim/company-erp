@@ -1,9 +1,9 @@
 // src/app/orders/page.tsx
-// 수주 관리 페이지 - 오류 수정 및 최적화
+// 수주 관리 페이지 - Supabase 연동
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -49,31 +49,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
-// 타입 정의 - 간소화
-type ClientType = 'government' | 'private'
-type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'cancelled'
-type OrderType = 'new' | 'change1' | 'change2' | 'change3'
-type TransportType = 'onsite' | 'transport'
-
-interface Order {
-  id: string
-  order_number: string
-  project_name: string
-  client_type: ClientType
-  company_name: string
-  contract_date?: string
-  contract_amount: number
-  order_type: OrderType
-  transport_type?: TransportType
-  remediation_method?: string
-  contamination_info?: string
-  verification_company?: string
-  status: OrderStatus
-  progress_percentage: number
-  primary_manager?: string
-  secondary_manager?: string
-}
+import { Order, ClientType, OrderStatus, OrderType, TransportType } from "@/types/order"
+import { getOrders, createOrder, deleteOrder, getOrderStats } from "@/lib/api/orders"
+import { useToast } from "@/components/ui/use-toast"
 
 // 라벨 상수
 const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
@@ -112,124 +90,96 @@ const CLIENT_TYPE_COLORS: Record<ClientType, string> = {
   private: 'bg-cyan-100 text-cyan-800'
 }
 
-// 실제 엑셀 데이터 기반 임시 데이터 - 간소화
-const ordersData: Order[] = [
-  {
-    id: "1",
-    order_number: "ORD-2024-001",
-    project_name: "24-A-OO부대 토양오염정화공사(1517)",
-    client_type: "government",
-    company_name: "제2218부대",
-    contract_date: "2024-11-28",
-    contract_amount: 1063758000,
-    order_type: "new",
-    transport_type: "onsite",
-    remediation_method: "토양경작법",
-    status: "in_progress",
-    progress_percentage: 65,
-    primary_manager: "이대룡",
-    secondary_manager: "백승호"
-  },
-  {
-    id: "2",
-    order_number: "ORD-2025-002",
-    project_name: "OO지역 토양오염 정화공사",
-    client_type: "government",
-    company_name: "육군5378부대",
-    contract_date: "2025-03-27",
-    contract_amount: 85105000,
-    order_type: "new",
-    transport_type: "transport",
-    status: "contracted",
-    progress_percentage: 0,
-    primary_manager: "이대룡",
-    secondary_manager: "백승호"
-  },
-  {
-    id: "3",
-    order_number: "ORD-2021-003",
-    project_name: "광명시흥 일반산업단지 및 유통단지 토양오염 정화용역",
-    client_type: "private",
-    company_name: "한국토지주택공사",
-    contract_date: "2021-05-14",
-    contract_amount: 4957675600,
-    order_type: "new",
-    transport_type: "transport",
-    remediation_method: "토양세척법",
-    verification_company: "울산과학대학교 산학협력단",
-    status: "completed",
-    progress_percentage: 100,
-    primary_manager: "박찬수"
-  },
-  {
-    id: "4",
-    order_number: "ORD-2024-004",
-    project_name: "숭인지하차도 및 연결도로 건설공사 오염토양 정화처리용역",
-    client_type: "government",
-    company_name: "인천광역시 종합건설본부",
-    contract_date: "2024-10-25",
-    contract_amount: 12759450,
-    order_type: "new",
-    transport_type: "transport",
-    remediation_method: "토양경작법, 토양세척법",
-    contamination_info: "TPH(3,915mg/kg)",
-    verification_company: "재단법인 경기환경과학연구원",
-    status: "in_progress",
-    progress_percentage: 40,
-    primary_manager: "최진우"
-  },
-  {
-    id: "5",
-    order_number: "ORD-2025-005",
-    project_name: "숭인지하차도 연결도로 건설공사 오염토양 정화처리용역 (1차변경)",
-    client_type: "government",
-    company_name: "인천광역시 종합건설본부",
-    contract_date: "2025-01-16",
-    contract_amount: 5983450,
-    order_type: "change1",
-    transport_type: "transport",
-    remediation_method: "토양경작법, 토양세척법",
-    contamination_info: "TPH(3,915mg/kg)",
-    verification_company: "재단법인 경기환경과학연구원",
-    status: "contracted",
-    progress_percentage: 0,
-    primary_manager: "최진우"
-  }
-]
-
 export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [clientTypeFilter, setClientTypeFilter] = useState<string>("all")
   const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all")
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
-  const [orders, setOrders] = useState<Order[]>(ordersData)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [stats, setStats] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
 
-  // 새 수주 등록 처리 (임시)
+  // 데이터 로드
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true)
+      const [ordersData, statsData] = await Promise.all([
+        getOrders(),
+        getOrderStats()
+      ])
+      setOrders(ordersData)
+      setStats(statsData)
+    } catch (error) {
+      console.error('데이터 로드 실패:', error)
+      toast({
+        title: "오류 발생",
+        description: "데이터를 불러오는데 실패했습니다.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // 새 수주 등록 처리
   const handleNewOrder = async () => {
     try {
-      const newOrder: Order = {
-        id: String(orders.length + 1),
+      const newOrder = {
         order_number: `ORD-${new Date().getFullYear()}-${String(orders.length + 1).padStart(3, '0')}`,
         project_name: "새로운 토양정화 프로젝트",
-        client_type: "government",
+        client_type: "government" as ClientType,
         company_name: "테스트 회사",
         contract_date: new Date().toISOString().split('T')[0],
         contract_amount: 10000000,
-        order_type: "new",
-        transport_type: "transport",
+        order_type: "new" as OrderType,
+        transport_type: "transport" as TransportType,
         remediation_method: "토양경작법",
-        status: "contracted",
+        status: "contracted" as OrderStatus,
         progress_percentage: 0,
         primary_manager: "담당자"
       }
 
-      setOrders(prev => [...prev, newOrder])
+      await createOrder(newOrder)
+      await loadData()
       setIsNewOrderOpen(false)
-      alert("새 수주가 성공적으로 등록되었습니다!")
+      toast({
+        title: "성공",
+        description: "새 수주가 성공적으로 등록되었습니다."
+      })
     } catch (error) {
       console.error("수주 등록 오류:", error)
-      alert("수주 등록 중 오류가 발생했습니다.")
+      toast({
+        title: "오류 발생",
+        description: "수주 등록 중 오류가 발생했습니다.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // 수주 삭제 처리
+  const handleDeleteOrder = async (id: string) => {
+    if (!confirm("정말로 이 수주를 삭제하시겠습니까?")) return
+
+    try {
+      await deleteOrder(id)
+      await loadData()
+      toast({
+        title: "성공",
+        description: "수주가 성공적으로 삭제되었습니다."
+      })
+    } catch (error) {
+      console.error("수주 삭제 오류:", error)
+      toast({
+        title: "오류 발생",
+        description: "수주 삭제 중 오류가 발생했습니다.",
+        variant: "destructive"
+      })
     }
   }
 
@@ -247,22 +197,6 @@ export default function OrdersPage() {
     return matchesSearch && matchesStatus && matchesClientType && matchesOrderType
   })
 
-  // 통계 계산
-  const stats = {
-    total: orders.length,
-    by_status: {
-      contracted: orders.filter(o => o.status === "contracted").length,
-      in_progress: orders.filter(o => o.status === "in_progress").length,
-      completed: orders.filter(o => o.status === "completed").length,
-      cancelled: orders.filter(o => o.status === "cancelled").length,
-    },
-    by_client_type: {
-      government: orders.filter(o => o.client_type === "government").length,
-      private: orders.filter(o => o.client_type === "private").length,
-    },
-    total_amount: orders.reduce((sum, order) => sum + order.contract_amount, 0)
-  }
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
       style: 'currency',
@@ -273,6 +207,17 @@ export default function OrdersPage() {
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-'
     return new Date(dateString).toLocaleDateString('ko-KR')
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -315,13 +260,13 @@ export default function OrdersPage() {
       </div>
 
       {/* 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">총 수주</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}건</div>
+            <div className="text-2xl font-bold">{stats?.total || 0}건</div>
           </CardContent>
         </Card>
 
@@ -330,7 +275,7 @@ export default function OrdersPage() {
             <CardTitle className="text-sm font-medium text-gray-600">관수</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{stats.by_client_type.government}건</div>
+            <div className="text-2xl font-bold text-purple-600">{stats?.by_client_type?.government || 0}건</div>
           </CardContent>
         </Card>
 
@@ -339,7 +284,7 @@ export default function OrdersPage() {
             <CardTitle className="text-sm font-medium text-gray-600">민수</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-cyan-600">{stats.by_client_type.private}건</div>
+            <div className="text-2xl font-bold text-cyan-600">{stats?.by_client_type?.private || 0}건</div>
           </CardContent>
         </Card>
 
@@ -348,7 +293,7 @@ export default function OrdersPage() {
             <CardTitle className="text-sm font-medium text-gray-600">진행중</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.by_status.in_progress}건</div>
+            <div className="text-2xl font-bold text-yellow-600">{stats?.by_status?.in_progress || 0}건</div>
           </CardContent>
         </Card>
 
@@ -357,7 +302,7 @@ export default function OrdersPage() {
             <CardTitle className="text-sm font-medium text-gray-600">완료</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.by_status.completed}건</div>
+            <div className="text-2xl font-bold text-green-600">{stats?.by_status?.completed || 0}건</div>
           </CardContent>
         </Card>
 
@@ -367,7 +312,7 @@ export default function OrdersPage() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold text-gray-900">
-              {formatCurrency(stats.total_amount)}
+              {formatCurrency(stats?.total_amount || 0)}
             </div>
           </CardContent>
         </Card>
@@ -535,13 +480,19 @@ export default function OrdersPage() {
                           <DropdownMenuLabel>액션</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => {
-                            alert(`${order.order_number} 상세보기 기능은 다음 단계에서 구현됩니다.`)
+                            toast({
+                              title: "알림",
+                              description: "상세보기 기능은 다음 단계에서 구현됩니다."
+                            })
                           }}>
                             <Eye className="mr-2 h-4 w-4" />
                             상세보기
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => {
-                            alert(`${order.order_number} 수정 기능은 다음 단계에서 구현됩니다.`)
+                            toast({
+                              title: "알림",
+                              description: "수정 기능은 다음 단계에서 구현됩니다."
+                            })
                           }}>
                             <Edit className="mr-2 h-4 w-4" />
                             수정하기
@@ -549,12 +500,7 @@ export default function OrdersPage() {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-red-600"
-                            onClick={() => {
-                              if (confirm("정말로 이 수주를 삭제하시겠습니까?")) {
-                                setOrders(prev => prev.filter(o => o.id !== order.id))
-                                alert("수주가 삭제되었습니다.")
-                              }
-                            }}
+                            onClick={() => handleDeleteOrder(order.id)}
                           >
                             삭제하기
                           </DropdownMenuItem>
