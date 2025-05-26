@@ -533,18 +533,18 @@ export default function ReceivablesPage() {
 
       {/* 연체 채권 상세 정보 */}
       <Dialog open={showOverdueDetails} onOpenChange={setShowOverdueDetails}>
-        <DialogContent className="max-w-screen-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>연체 채권 상세 정보</DialogTitle>
-            <DialogDescription>
-              {selectedReceivable?.receivable_number} 상세 정보
-            </DialogDescription>
-          </DialogHeader>
-          {selectedReceivable && (
-            <OverdueDetails receivable={selectedReceivable} />
-          )}
-        </DialogContent>
-      </Dialog>
+          <DialogContent className=" max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>연체 채권 상세 정보</DialogTitle>
+              <DialogDescription>
+                {selectedReceivable?.receivable_number} 상세 정보
+              </DialogDescription>
+            </DialogHeader>
+            {selectedReceivable && (
+              <OverdueDetails receivable={selectedReceivable} />
+            )}
+          </DialogContent>
+        </Dialog>
 
       {/* 입금 처리 다이얼로그 */}
       <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
