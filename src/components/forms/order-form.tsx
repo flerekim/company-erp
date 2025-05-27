@@ -71,13 +71,14 @@ const orderSchema = z.object({
 })
 
 interface OrderFormProps {
-  order?: Order
-  onSubmit: (data: OrderFormData) => void
-  onCancel: () => void
+  initialData?: Order | null;
+  onSubmit: (data: OrderFormData, files: File[]) => void
+  onClose: () => void // onCancel 대신 onClose 사용 (다이얼로그 prop과 일치)
   isLoading?: boolean
+  mode: 'create' | 'edit' // mode 속성 추가 (OrderForm에서 직접 사용)
 }
 
-export function OrderForm({ order, onSubmit, onCancel, isLoading = false }: OrderFormProps) {
+export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, mode }: OrderFormProps) {
   const { toast } = useToast()
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -86,20 +87,20 @@ export function OrderForm({ order, onSubmit, onCancel, isLoading = false }: Orde
   const form = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
     defaultValues: {
-      project_name: order?.project_name || '',
-      company_name: order?.company_name || '',
-      client_type: order?.client_type || 'private',
-      contract_date: order?.contract_date || new Date().toISOString().split('T')[0],
-      contract_amount: order?.contract_amount || 0,
-      order_type: order?.order_type || 'new',
-      transport_type: order?.transport_type || 'onsite',
-      remediation_method: order?.remediation_method || '',
-      contamination_info: order?.contamination_info || '',
-      verification_company: order?.verification_company || '',
-      status: order?.status || 'contracted',
-      progress_percentage: order?.progress_percentage || 0,
-      primary_manager: order?.primary_manager || '',
-      secondary_manager: order?.secondary_manager || ''
+      project_name: initialData?.project_name || '',
+      company_name: initialData?.company_name || '',
+      client_type: initialData?.client_type || 'private',
+      contract_date: initialData?.contract_date || new Date().toISOString().split('T')[0],
+      contract_amount: initialData?.contract_amount || 0,
+      order_type: initialData?.order_type || 'new',
+      transport_type: initialData?.transport_type || 'onsite',
+      remediation_method: initialData?.remediation_method || '',
+      contamination_info: initialData?.contamination_info || '',
+      verification_company: initialData?.verification_company || '',
+      status: initialData?.status || 'contracted',
+      progress_percentage: initialData?.progress_percentage || 0,
+      primary_manager: initialData?.primary_manager || '',
+      secondary_manager: initialData?.secondary_manager || ''
     },
     mode: 'onChange'
   })
@@ -145,9 +146,9 @@ export function OrderForm({ order, onSubmit, onCancel, isLoading = false }: Orde
   const handleSubmit = async (data: OrderFormData) => {
     setIsSubmitting(true)
     try {
-      await onSubmit(data)
+      await onSubmit(data, uploadedFiles)
       toast({
-        title: order ? "수주 정보가 수정되었습니다." : "새 수주가 등록되었습니다.",
+        title: mode === 'edit' ? "수주 정보가 수정되었습니다." : "새 수주가 등록되었습니다.",
         description: "수주 목록에서 확인하실 수 있습니다.",
         variant: "success",
         action: (
@@ -217,26 +218,26 @@ export function OrderForm({ order, onSubmit, onCancel, isLoading = false }: Orde
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            {order ? '수주 정보 수정' : '새 수주 등록'}
+            {mode === 'create' ? '새 수주 등록' : '수주 정보 수정'}
           </CardTitle>
           <CardDescription>
             토양오염정화공사 프로젝트의 상세 정보를 입력하세요.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {order && (
+          {initialData && (
             <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg mb-4">
               <div>
                 <Label className="text-gray-500">수주번호</Label>
-                <div className="font-mono text-lg">{order.order_number}</div>
+                <div className="font-mono text-lg">{initialData.order_number}</div>
               </div>
               <div>
                 <Label className="text-gray-500">등록일</Label>
-                <div>{new Date(order.created_at).toLocaleDateString('ko-KR')}</div>
+                <div>{new Date(initialData.created_at).toLocaleDateString('ko-KR')}</div>
               </div>
               <div>
                 <Label className="text-gray-500">수정일</Label>
-                <div>{new Date(order.updated_at).toLocaleDateString('ko-KR')}</div>
+                <div>{new Date(initialData.updated_at).toLocaleDateString('ko-KR')}</div>
               </div>
             </div>
           )}
@@ -636,7 +637,7 @@ export function OrderForm({ order, onSubmit, onCancel, isLoading = false }: Orde
             <Button
               type="button"
               variant="outline"
-              onClick={onCancel}
+              onClick={onClose}
               disabled={isSubmitting || isLoading}
             >
               취소
@@ -645,7 +646,7 @@ export function OrderForm({ order, onSubmit, onCancel, isLoading = false }: Orde
               type="submit"
               disabled={isSubmitting || isLoading || !isFormValid}
             >
-              {isSubmitting ? '저장 중...' : order ? '수정 완료' : '등록 완료'}
+              {isSubmitting ? '저장 중...' : mode === 'edit' ? '수정 완료' : '등록 완료'}
             </Button>
           </div>
         </form>

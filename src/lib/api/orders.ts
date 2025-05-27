@@ -1,4 +1,4 @@
-import { supabase } from '../supabase/supabase'
+import { supabase } from '../supabase/client'
 import { Order, OrderFilters } from '@/types/order'
 
 export async function getOrders(filters?: OrderFilters) {

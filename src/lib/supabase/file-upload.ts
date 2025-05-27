@@ -1,7 +1,7 @@
 // src/lib/file-upload.ts
 // 파일 업로드 서비스 (Supabase Storage 사용)
 
-import { supabase } from './supabase'
+import { supabase } from './client'
 import { OrderFile } from '@/types/order'
 
 export class FileUploadService {

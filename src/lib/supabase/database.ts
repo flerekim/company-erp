@@ -1,7 +1,7 @@
 // src/lib/database.ts
 // 데이터베이스 접근을 위한 유틸리티 함수들
 
-import { supabase } from './supabase'
+import { supabase } from './client'
 import { Receivable, PaymentFormData } from '@/types/receivables'
 
 // 수주 관리 관련 함수들
@@ -73,6 +73,24 @@ export const orderService = {
       .single()
     if (error && error.code !== 'PGRST116') throw error // PGRST116는 결과가 없을 때 발생
     return { data }
+  },
+
+  // 파일 업로드
+  async uploadFile(filePath: string, file: File) {
+    const { data, error } = await supabase.storage
+      .from('order-attachments') // Supabase Storage 버킷 이름 (규칙에 맞게 수정)
+      .upload(filePath, file)
+
+    if (error) {
+      throw error;
+    }
+
+    // 업로드된 파일의 공개 URL 가져오기 (필요하다면)
+    const { data: publicUrlData } = supabase.storage
+      .from('order-attachments')
+      .getPublicUrl(data.path)
+      
+    return { data: { ...data, url: publicUrlData.publicUrl } }; // path와 publicUrl 포함하여 반환
   }
 }
 

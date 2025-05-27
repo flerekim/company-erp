@@ -58,9 +58,11 @@ import {
   MoreHorizontal,
   FileText,
   Download,
-  Upload
+  Upload,
+  Loader2,
+  Calendar
 } from "lucide-react"
-import { Order, OrderFormData, ClientType, OrderStatus, OrderType } from "@/types/order"
+import { Order, OrderFormData, ClientType, OrderStatus, OrderType, OrderFile } from "@/types/order"
 import { OrderForm } from "@/components/forms/order-form"
 import { orderService } from "@/lib/supabase/database"
 
@@ -69,6 +71,13 @@ export default function OrdersPage() {
   const [clientTypeFilter, setClientTypeFilter] = useState<ClientType | "all">("all")
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all")
   const [orderTypeFilter, setOrderTypeFilter] = useState<OrderType | "all">("all")
+  const [dateRangeFilter, setDateRangeFilter] = useState<{
+    startDate: string;
+    endDate: string;
+  }>({
+    startDate: "",
+    endDate: ""
+  })
   
   // 다이얼로그 상태
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false)
@@ -165,7 +174,13 @@ export default function OrdersPage() {
     const matchesStatus = statusFilter === "all" || order.status === statusFilter
     const matchesOrderType = orderTypeFilter === "all" || order.order_type === orderTypeFilter
 
-    return matchesSearch && matchesClientType && matchesStatus && matchesOrderType
+    // 기간 필터 적용
+    const orderDate = new Date(order.contract_date)
+    const matchesDateRange = 
+      (!dateRangeFilter.startDate || orderDate >= new Date(dateRangeFilter.startDate)) &&
+      (!dateRangeFilter.endDate || orderDate <= new Date(dateRangeFilter.endDate))
+
+    return matchesSearch && matchesClientType && matchesStatus && matchesOrderType && matchesDateRange
   })
 
   // 새 수주 등록
@@ -189,9 +204,11 @@ export default function OrdersPage() {
   }
 
   // 폼 제출 처리
-  const handleFormSubmit = async (data: OrderFormData) => {
+  const handleFormSubmit = async (data: OrderFormData, files: File[]) => {
     try {
       setIsLoading(true)
+
+      // 2. 수주 데이터 Supabase에 저장 (파일 정보 포함)
       if (formMode === 'create') {
         // 수주번호 자동 생성
         const { data: lastOrder } = await orderService.getLastOrder()
@@ -202,20 +219,78 @@ export default function OrdersPage() {
         }
         const order_number = `ORD-${new Date().getFullYear()}-${nextNumber.toString().padStart(3, '0')}`
 
-        // 새 수주 생성
-        await orderService.create({
+        // 새 수주 생성 (파일 정보 제외)
+        const createdOrder = await orderService.create({
           ...data,
           order_number,
           status: 'contracted',
           progress_percentage: 0,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          // attachments는 나중에 업데이트
         })
+
+        let uploadedFileDetails: OrderFile[] = []
+
+        // 파일 Supabase Storage에 업로드 (생성된 수주 ID 사용)
+        if (files && files.length > 0 && createdOrder?.id) {
+          for (const file of files) {
+            const encodedFileName = encodeURIComponent(file.name)
+            const filePath = `${createdOrder.id}/${Date.now()}-${encodedFileName}` // 생성된 수주 ID와 인코딩된 파일명 사용 (버킷 이름 제거)
+            const { data: uploadData } = await orderService.uploadFile(filePath, file)
+
+            // 업로드 성공 시 파일 정보 저장
+            uploadedFileDetails.push({
+              id: uploadData.id, // Supabase Storage에서 반환하는 고유 ID (가정)
+              order_id: createdOrder.id, // 생성된 수주 ID 사용
+              file_name: file.name,
+              file_type: 'other', // TODO: 파일 확장자 등으로 타입 구분 로직 추가
+              file_size: file.size,
+              file_url: uploadData.url, // Supabase Storage에서 반환하는 파일 URL (가정)
+              uploaded_at: new Date().toISOString(),
+              uploaded_by: 'current_user_id', // TODO: 현재 로그인한 사용자 ID 가져오는 로직 추가
+            })
+          }
+
+          // 수주 데이터에 파일 정보 업데이트
+          await orderService.update(createdOrder.id, {
+            attachments: uploadedFileDetails
+          })
+        }
+
       } else if (formMode === 'edit' && selectedOrder) {
-        // 수주 수정
+        // 기존 첨부 파일 가져오기 (수정 시 기존 파일 유지 및 새 파일 추가)
+        const existingAttachments = selectedOrder.attachments || [];
+        let uploadedFileDetails: OrderFile[] = []
+
+        // 파일 Supabase Storage에 업로드 (기존 수주 ID 사용)
+        if (files && files.length > 0) {
+          for (const file of files) {
+            const encodedFileName = encodeURIComponent(file.name)
+            const filePath = `${selectedOrder.id}/${Date.now()}-${encodedFileName}` // 기존 수주 ID와 인코딩된 파일명 사용 (버킷 이름 제거)
+            const { data: uploadData } = await orderService.uploadFile(filePath, file)
+
+            // 업로드 성공 시 파일 정보 저장
+            uploadedFileDetails.push({
+              id: uploadData.id, // Supabase Storage에서 반환하는 고유 ID (가정)
+              order_id: selectedOrder.id, // 기존 수주 ID 사용
+              file_name: file.name,
+              file_type: 'other', // TODO: 파일 확장자 등으로 타입 구분 로직 추가
+              file_size: file.size,
+              file_url: uploadData.url, // Supabase Storage에서 반환하는 파일 URL (가정)
+              uploaded_at: new Date().toISOString(),
+              uploaded_by: 'current_user_id', // TODO: 현재 로그인한 사용자 ID 가져오는 로직 추가
+            })
+          }
+        }
+
+        const allAttachments = [...existingAttachments, ...uploadedFileDetails];
+
+        // 수주 수정 (파일 정보 업데이트)
         await orderService.update(selectedOrder.id, {
           ...data,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          attachments: allAttachments // 파일 정보 업데이트
         })
       }
 
@@ -250,305 +325,226 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">수주 관리</h1>
+    <div className="p-6 space-y-6">
+      {/* 페이지 헤더 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">수주 관리</h1>
+          <p className="text-gray-600 mt-1">등록된 수주 목록을 확인하고 관리합니다.</p>
+        </div>
         <Button onClick={handleCreateOrder}>
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="mr-2 h-4 w-4" />
           새 수주 등록
         </Button>
       </div>
 
-      {/* 통계 대시보드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 수주</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{filteredOrders.length}건</div>
-            <div className="text-sm text-gray-500">
-              {formatCurrency(filteredOrders.reduce((sum, o) => sum + o.contract_amount, 0))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">진행중</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
-              {filteredOrders.filter(o => o.status === 'in_progress').length}건
-            </div>
-            <div className="text-sm text-yellow-500">
-              {Math.round((filteredOrders.filter(o => o.status === 'in_progress').length / filteredOrders.length) * 100) || 0}%
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">완료</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {filteredOrders.filter(o => o.status === 'completed').length}건
-            </div>
-            <div className="text-sm text-green-500">
-              {Math.round((filteredOrders.filter(o => o.status === 'completed').length / filteredOrders.length) * 100) || 0}%
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">관수/민수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-purple-600">관수:</span>
-                <span className="font-medium">{filteredOrders.filter(o => o.client_type === 'government').length}건</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-cyan-600">민수:</span>
-                <span className="font-medium">{filteredOrders.filter(o => o.client_type === 'private').length}건</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 필터 섹션 */}
+      {/* 검색 및 필터 영역 */}
       <Card>
-        <CardHeader>
-          <CardTitle>필터</CardTitle>
-          <CardDescription>수주 검색 및 필터링</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Input
-              placeholder="수주번호, 프로젝트명, 고객사 검색"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+        <CardContent className="pt-2 pb-2">
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            {/* 검색 필드 - 남은 공간 차지 */}
+            <div className="flex-1 w-full">
+              <Input
+                placeholder="수주번호, 프로젝트명, 회사명 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
 
-            <Select value={clientTypeFilter} onValueChange={(value) => setClientTypeFilter(value as ClientType | "all")}>
-              <SelectTrigger>
-                <SelectValue placeholder="고객사 유형" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="government">관수</SelectItem>
-                <SelectItem value="private">민수</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* 기간 필터 및 셀렉트 필터 그룹 */}
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+              {/* 기간 필터 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar className="h-4 w-4 text-gray-500" />
+                <span className="text-sm text-gray-600">계약일</span>
+                <Input
+                  type="date"
+                  value={dateRangeFilter.startDate}
+                  onChange={(e) => setDateRangeFilter(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="w-[140px]"
+                />
+                <span className="text-gray-500">~</span>
+                <Input
+                  type="date"
+                  value={dateRangeFilter.endDate}
+                  onChange={(e) => setDateRangeFilter(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-[140px]"
+                />
+              </div>
 
-            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as OrderStatus | "all")}>
-              <SelectTrigger>
-                <SelectValue placeholder="프로젝트 상태" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="contracted">계약</SelectItem>
-                <SelectItem value="in_progress">진행중</SelectItem>
-                <SelectItem value="completed">완료</SelectItem>
-                <SelectItem value="cancelled">취소</SelectItem>
-              </SelectContent>
-            </Select>
+              {/* 셀렉트 필터들 */}
+              <div className="flex flex-wrap gap-4 items-center">
+                <Select
+                  value={clientTypeFilter}
+                  onValueChange={(value: ClientType | "all") => setClientTypeFilter(value)}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="거래처 유형" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 거래처 유형</SelectItem>
+                    <SelectItem value="government">관급</SelectItem>
+                    <SelectItem value="private">민간</SelectItem>
+                  </SelectContent>
+                </Select>
 
-            <Select value={orderTypeFilter} onValueChange={(value) => setOrderTypeFilter(value as OrderType | "all")}>
-              <SelectTrigger>
-                <SelectValue placeholder="수주 유형" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="new">신규</SelectItem>
-                <SelectItem value="change1">1차변경</SelectItem>
-                <SelectItem value="change2">2차변경</SelectItem>
-                <SelectItem value="change3">3차변경</SelectItem>
-              </SelectContent>
-            </Select>
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value: OrderStatus | "all") => setStatusFilter(value)}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="상태" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 상태</SelectItem>
+                    <SelectItem value="contracted">계약</SelectItem>
+                    <SelectItem value="in_progress">진행중</SelectItem>
+                    <SelectItem value="completed">완료</SelectItem>
+                    <SelectItem value="cancelled">취소</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={orderTypeFilter}
+                  onValueChange={(value: OrderType | "all") => setOrderTypeFilter(value)}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="수주 유형" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 수주 유형</SelectItem>
+                    <SelectItem value="new">신규</SelectItem>
+                    <SelectItem value="change1">1차 변경</SelectItem>
+                    <SelectItem value="change2">2차 변경</SelectItem>
+                    <SelectItem value="change3">3차 변경</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 수주 목록 */}
+      {/* 수주 목록 테이블 */}
       <Card>
         <CardHeader>
           <CardTitle>수주 목록</CardTitle>
-          <CardDescription>총 {filteredOrders.length}건의 수주</CardDescription>
+          <CardDescription>등록된 총 {ordersList.length}건의 수주</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>수주번호</TableHead>
-                <TableHead>고객사</TableHead>
-                <TableHead>프로젝트명</TableHead>
-                <TableHead>계약금액</TableHead>
-                <TableHead>정화방법</TableHead>
-                <TableHead>처리방식</TableHead>
-                <TableHead>상태</TableHead>
-                <TableHead>진행률</TableHead>
-                <TableHead>담당자</TableHead>
-                <TableHead className="text-right">액션</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredOrders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-mono">
-                    <div className="space-y-1">
-                      <div>{order.order_number}</div>
-                      <Badge variant="outline" className="text-xs">
-                        {getOrderTypeLabel(order.order_type)}
-                      </Badge>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="space-y-1">
-                      <Badge className={getClientTypeBadge(order.client_type)}>
-                        {order.client_type === 'government' ? '관수' : '민수'}
-                      </Badge>
-                      <div className="text-sm">{order.company_name}</div>
-                    </div>
-                  </TableCell>
-
-                  <TableCell className="max-w-[300px]">
-                    <div className="space-y-1">
-                      <div className="truncate font-medium" title={order.project_name}>
-                        {order.project_name}
-                      </div>
-                      <div className="text-xs text-gray-500">{order.contamination_info}</div>
-                    </div>
-                  </TableCell>
-
-                  <TableCell className="font-medium">
-                    {formatCurrency(order.contract_amount)}
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="text-sm">{order.remediation_method}</div>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge className={getTransportTypeBadge(order.transport_type)}>
-                      {order.transport_type === 'onsite' ? '부지내' : '반출'}
-                    </Badge>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge className={getStatusBadge(order.status)}>
-                      {getStatusLabel(order.status)}
-                    </Badge>
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">{order.progress_percentage}%</div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
-                        <div 
-                          className="bg-blue-600 h-1.5 rounded-full" 
-                          style={{ width: `${order.progress_percentage}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="text-sm">
-                      <div className="font-medium">{order.primary_manager}</div>
-                      {order.secondary_manager && (
-                        <div className="text-gray-500">{order.secondary_manager}</div>
-                      )}
-                    </div>
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
+          {isLoading ? (
+            <div className="flex justify-center items-center h-48">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="text-center text-gray-500">해당 조건에 맞는 수주가 없습니다.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="text-lg">
+                  <TableRow>
+                    <TableHead>상태</TableHead>
+                    <TableHead>고객사 유형</TableHead>
+                    <TableHead>거래처</TableHead>
+                    <TableHead className="w-[200px]">프로젝트명</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">계약금액(V.A.T 포함)</TableHead>
+                    <TableHead className="pl-12">수주유형</TableHead>
+                    <TableHead>계약일</TableHead>
+                    <TableHead className="text-center">현장/운반</TableHead>
+                    <TableHead className="text-right">파일</TableHead>
+                    <TableHead className="w-[100px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="text-base">
+                  {filteredOrders.map((order) => (
+                    <TableRow key={order.id}>
+                      <TableCell>
+                        <Badge className={getStatusBadge(order.status)}>{getStatusLabel(order.status)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getClientTypeBadge(order.client_type)}>
+                          {order.client_type === 'government' ? '관급' : '민간'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{order.company_name}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{order.project_name}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(order.contract_amount)}</TableCell>
+                      <TableCell className="pl-12">{getOrderTypeLabel(order.order_type)}</TableCell>
+                      <TableCell>{formatDate(order.contract_date)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge className={getTransportTypeBadge(order.transport_type)}>{order.transport_type === 'onsite' ? '현장' : '운반'}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {/* 파일 관리 링크 또는 버튼 */}
+                        <Button variant="ghost" size="sm">
+                          <FileText className="h-4 w-4 mr-1" /> {order.attachments?.length || 0}
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>액션</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => alert('상세보기 기능 준비중')}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          상세보기
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleEditOrder(order)}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          수정
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => alert('파일 관리 기능 준비중')}>
-                          <FileText className="mr-2 h-4 w-4" />
-                          파일 관리
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          onClick={() => handleDeleteConfirm(order)}
-                          className="text-red-600"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          삭제
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              aria-label="Actions"
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>작업</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => handleEditOrder(order)}>
+                              <Edit className="mr-2 h-4 w-4" /> 수정
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteConfirm(order)}>
+                              <Trash2 className="mr-2 h-4 w-4" /> 삭제
+                            </DropdownMenuItem>
+                            {/* 추가 작업 메뉴 */}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* 수주 등록/수정 다이얼로그 */}
       <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[600px] lg:max-w-[800px]">
           <DialogHeader>
-            <DialogTitle>
-              {formMode === 'create' ? '새 수주 등록' : '수주 정보 수정'}
-            </DialogTitle>
+            <DialogTitle>{formMode === 'create' ? '새 수주 등록' : '수주 수정'}</DialogTitle>
             <DialogDescription>
-              토양오염정화공사 프로젝트의 상세 정보를 입력하세요.
+              수주 정보를 입력하거나 수정합니다.
             </DialogDescription>
           </DialogHeader>
+          {/* OrderForm 컴포넌트 */}
           <OrderForm
-            order={selectedOrder || undefined}
             onSubmit={handleFormSubmit}
-            onCancel={() => setIsFormDialogOpen(false)}
-            isLoading={isLoading}
+            initialData={selectedOrder}
+            mode={formMode}
+            isLoading={isLoading} // Form 내 로딩 상태 전달
+            onClose={() => setIsFormDialogOpen(false)}
           />
         </DialogContent>
       </Dialog>
 
-      {/* 삭제 확인 다이얼로그 */}
+      {/* 수주 삭제 확인 다이얼로그 */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>수주 삭제 확인</AlertDialogTitle>
+            <AlertDialogTitle>정말 삭제하시겠습니까?</AlertDialogTitle>
             <AlertDialogDescription>
-              정말로 이 수주를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
-              <br />
-              <br />
-              <strong>수주번호:</strong> {selectedOrder?.order_number}
-              <br />
-              <strong>프로젝트명:</strong> {selectedOrder?.project_name}
+              이 수주 정보를 삭제하면 되돌릴 수 없습니다. 계속하시겠습니까?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteOrder}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              삭제
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteOrder}>삭제</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

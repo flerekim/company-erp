@@ -18,6 +18,7 @@ export interface Order {
   contract_date: string          // 계약일
   contract_amount: number        // 계약금액
   order_type: OrderType          // 수주유형 (신규/변경)
+  due_date: string               // 마감일 (추가)
   
   // 토양정화 전문 정보
   transport_type: TransportType  // 부지내/반출 구분
@@ -36,6 +37,7 @@ export interface Order {
   // 메타데이터
   created_at: string            // 생성일
   updated_at: string            // 수정일
+  attachments?: OrderFile[]      // 첨부 파일 목록 (추가, 선택 사항)
 }
 
 // 수주 폼 데이터 인터페이스

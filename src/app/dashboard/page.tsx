@@ -61,7 +61,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">대시보드</h1>
-          <p className="text-gray-600 mt-1">토양오염정화공사 수주 및 채권 현황을 한눈에 확인하세요</p>
+          <p className="text-gray-600 mt-1">인광이에스 수주 및 채권 현황을 한눈에 확인하세요</p>
         </div>
       </div>
 
