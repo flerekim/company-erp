@@ -500,17 +500,17 @@ export default function OrdersPage() {
   const handleExportExcel = () => {
     // 테이블 데이터 엑셀로 변환
     const exportData = displayOrders.filter(Boolean).map((order) => ({
-      상태: getStatusLabel(order.status),
-      고객사유형: order.client_type === 'government' ? '관수' : '민수',
-      프로젝트명: order.project_name,
-      거래처: order.company_name,
-      계약금액: order.contract_amount,
-      수주유형: String(order.order_type) === 'new+change' ? '신규+변경' : getOrderTypeLabel(order.order_type as OrderType),
-      계약일: formatDate(order.contract_date),
-      진행률: order.progress_percentage + '%',
-      오염정보: getContaminationDisplay(order.contamination_info),
-      정화장소: getTransportTypeLabel(order.transport_type),
-      파일: order.fileCount
+      상태: getStatusLabel((order as any).status),
+      고객사유형: (order as any).client_type === 'government' ? '관수' : '민수',
+      프로젝트명: (order as any).project_name,
+      거래처: (order as any).company_name,
+      계약금액: (order as any).contract_amount,
+      수주유형: String((order as any).order_type) === 'new+change' ? '신규+변경' : getOrderTypeLabel((order as any).order_type as OrderType),
+      계약일: formatDate((order as any).contract_date),
+      진행률: (order as any).progress_percentage + '%',
+      오염정보: getContaminationDisplay((order as any).contamination_info),
+      정화장소: getTransportTypeLabel((order as any).transport_type),
+      파일: (order as any).fileCount
     }))
     const ws = XLSXUtils.json_to_sheet(exportData)
     const wb = XLSXUtils.book_new()
@@ -658,7 +658,7 @@ export default function OrdersPage() {
                     </TableRow>
                   ) : (
                     displayOrders.filter(Boolean).map((order) => {
-                      const o = order as any // 타입 오류 방지용
+                      const o = order as any
                       return (
                         <TableRow key={o.id}>
                           <TableCell className="text-center">
@@ -868,7 +868,7 @@ export default function OrdersPage() {
               <DialogTitle>전체 계약 내역</DialogTitle>
               <DialogDescription>이 프로젝트의 신규 및 변경 계약 전체 내역입니다.</DialogDescription>
             </DialogHeader>
-            {selectedOrder && (
+            {selectedOrder && Array.isArray((selectedOrder as any).all_orders) && (
               <div className="overflow-x-auto">
                 <table className="min-w-full border text-sm">
                   <thead>
@@ -881,7 +881,7 @@ export default function OrdersPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedOrder.all_orders.map((o: any) => (
+                    {(selectedOrder as any).all_orders.map((o: any) => (
                       <tr key={o.id}>
                         <td className="border px-3 py-2 text-center">{getOrderTypeLabel(o.order_type as OrderType)}</td>
                         <td className="border px-3 py-2 text-center">{getStatusLabel(o.status as OrderStatus)}</td>
