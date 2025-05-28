@@ -48,6 +48,7 @@ import {
 } from "@/types/order"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
+import { supabase } from '@/lib/supabase/client'
 
 // 폼 검증 스키마
 const contaminationItemSchema = z.object({
@@ -97,6 +98,19 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
   const [isDragOver, setIsDragOver] = useState(false)
   const [contractAmountDisplay, setContractAmountDisplay] = useState<string>('')
   const [contaminationList, setContaminationList] = useState<ContaminationItem[]>(toContaminationArray(initialData?.contamination_info))
+  const [projectOptions, setProjectOptions] = useState<{project_name: string, company_name: string, client_type: ClientType}[]>([])
+  const [projectSearch, setProjectSearch] = useState('')
+  const [filteredProjects, setFilteredProjects] = useState<typeof projectOptions>([])
+  // 내부 신규/변경 토글 state 분리
+  const [formMode, setFormMode] = useState<'new' | 'change'>('new');
+  // 자동완성 드롭다운 표시 여부 state 추가
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // mode prop이 바뀔 때 formMode 초기화
+  useEffect(() => {
+    if (mode === 'create') setFormMode('new');
+    else if (mode === 'edit') setFormMode('change');
+  }, [mode]);
 
   const form = useForm<OrderFormData>({
     resolver: zodResolver<OrderFormData, any, OrderFormData>(orderSchema),
@@ -191,6 +205,73 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
   useEffect(() => {
     setContaminationList(toContaminationArray(initialData?.contamination_info))
   }, [initialData])
+
+  // 변경계약일 때 기존 프로젝트 목록 fetch
+  useEffect(() => {
+    if (formMode === 'change') {
+      supabase
+        .from('orders')
+        .select('project_name, company_name, client_type')
+        .eq('order_type', 'new')
+        .then(({ data }) => {
+          const unique = Array.from(new Map((data ?? []).map(item => [item.project_name, item])).values())
+          setProjectOptions(unique)
+          setFilteredProjects(unique)
+        })
+    }
+  }, [formMode])
+
+  // 프로젝트명 자동완성 필터링
+  useEffect(() => {
+    if (formMode === 'change') {
+      setFilteredProjects(
+        projectOptions.filter(opt => opt.project_name.toLowerCase().includes(projectSearch.toLowerCase()))
+      )
+    }
+  }, [projectSearch, projectOptions, formMode])
+
+  // formMode가 바뀔 때 폼 초기화
+  useEffect(() => {
+    if (formMode === 'new') {
+      form.reset({
+        project_name: '',
+        company_name: '',
+        client_type: 'private',
+        contract_date: new Date().toISOString().split('T')[0],
+        contract_amount: 0,
+        order_type: 'new',
+        transport_type: 'onsite',
+        remediation_method: '',
+        contamination_info: [],
+        verification_company: '',
+        status: 'contracted',
+        progress_percentage: 0,
+        primary_manager: '',
+        secondary_manager: ''
+      })
+      setContractAmountDisplay('')
+      setProjectSearch('')
+    } else {
+      form.reset({
+        project_name: '',
+        company_name: '',
+        client_type: 'private',
+        contract_date: new Date().toISOString().split('T')[0],
+        contract_amount: 0,
+        order_type: 'change1',
+        transport_type: 'onsite',
+        remediation_method: '',
+        contamination_info: [],
+        verification_company: '',
+        status: 'contracted',
+        progress_percentage: 0,
+        primary_manager: '',
+        secondary_manager: ''
+      })
+      setContractAmountDisplay('')
+      setProjectSearch('')
+    }
+  }, [formMode])
 
   // 오염 항목 추가
   const handleAddContamination = () => {
@@ -288,11 +369,16 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            {mode === 'create' ? '새 수주 등록' : '수주 정보 수정'}
+            {formMode === 'new' ? '새 수주 등록' : '변경계약 등록'}
           </CardTitle>
           <CardDescription>
             토양오염정화공사 프로젝트의 상세 정보를 입력하세요.
           </CardDescription>
+          {/* 신규/변경 토글 버튼 */}
+          <div className="flex gap-2 mt-4">
+            <Button variant={formMode === 'new' ? 'default' : 'outline'} onClick={() => setFormMode('new')}>신규</Button>
+            <Button variant={formMode === 'change' ? 'default' : 'outline'} onClick={() => setFormMode('change')}>변경</Button>
+          </div>
         </CardHeader>
         <CardContent>
           {initialData && (
@@ -361,11 +447,64 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="project_name">프로젝트명 *</Label>
-                    <Input
-                      id="project_name"
-                      placeholder="예: 24-A-OO부대 토양오염정화공사"
-                      {...form.register('project_name')}
-                    />
+                    {formMode === 'new' ? (
+                      <Input
+                        id="project_name"
+                        placeholder="예: 24-A-OO부대 토양오염정화공사"
+                        {...form.register('project_name')}
+                      />
+                    ) : (
+                      <div>
+                        <Input
+                          id="project_name"
+                          placeholder="기존 프로젝트명 검색"
+                          value={projectSearch}
+                          onChange={e => {
+                            setProjectSearch(e.target.value)
+                            setShowDropdown(true)
+                          }}
+                          onFocus={() => setShowDropdown(true)}
+                          onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                          autoComplete="off"
+                        />
+                        {showDropdown && projectSearch && filteredProjects.length > 0 && (
+                          <div className="border rounded bg-white shadow absolute z-10 w-full max-h-40 overflow-auto">
+                            {filteredProjects.map(opt => (
+                              <div
+                                key={opt.project_name}
+                                className="px-3 py-2 hover:bg-blue-50 cursor-pointer"
+                                onClick={async () => {
+                                  setShowDropdown(false)
+                                  setProjectSearch(opt.project_name)
+                                  const { data } = await supabase
+                                    .from('orders')
+                                    .select('*')
+                                    .eq('project_name', opt.project_name)
+                                    .order('created_at', { ascending: true })
+                                    .limit(1)
+                                    .single()
+                                  if (data) {
+                                    form.setValue('project_name', data.project_name)
+                                    form.setValue('company_name', data.company_name)
+                                    form.setValue('client_type', data.client_type)
+                                    form.setValue('remediation_method', data.remediation_method)
+                                    form.setValue('contamination_info', data.contamination_info)
+                                    form.setValue('verification_company', data.verification_company)
+                                    form.setValue('status', data.status)
+                                    form.setValue('progress_percentage', data.progress_percentage)
+                                    form.setValue('contract_date', data.contract_date)
+                                    form.setValue('primary_manager', data.primary_manager)
+                                    form.setValue('secondary_manager', data.secondary_manager)
+                                  }
+                                }}
+                              >
+                                {opt.project_name} <span className="text-xs text-gray-400">({opt.company_name})</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {form.formState.errors.project_name && (
                       <p className="text-sm text-red-500">{form.formState.errors.project_name.message}</p>
                     )}
@@ -421,17 +560,23 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
                     <Select
                       value={form.watch('order_type')}
                       onValueChange={(value) => form.setValue('order_type', value as OrderType)}
+                      disabled={formMode === 'new'}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="new">신규</SelectItem>
-                        <SelectItem value="change1">1차 변경</SelectItem>
-                        <SelectItem value="change2">2차 변경</SelectItem>
-                        <SelectItem value="change3">3차 변경</SelectItem>
-                        <SelectItem value="change4">4차 변경</SelectItem>
-                        <SelectItem value="change5">5차 변경</SelectItem>
+                        {formMode === 'new' ? (
+                          <SelectItem value="new">신규</SelectItem>
+                        ) : (
+                          <>
+                            <SelectItem value="change1">1차 변경</SelectItem>
+                            <SelectItem value="change2">2차 변경</SelectItem>
+                            <SelectItem value="change3">3차 변경</SelectItem>
+                            <SelectItem value="change4">4차 변경</SelectItem>
+                            <SelectItem value="change5">5차 변경</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

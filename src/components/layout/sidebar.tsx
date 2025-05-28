@@ -29,7 +29,6 @@ export function Sidebar({ }: SidebarProps) {
   const { profile } = useAuth()
   const [isHovered, setIsHovered] = useState(false)
   const [delayTimer, setDelayTimer] = useState<NodeJS.Timeout | null>(null)
-  const [isIkGroupOpen, setIsIkGroupOpen] = useState(false)
 
   // 로그인하지 않은 경우 렌더링하지 않음
   if (!profile) {
@@ -44,14 +43,14 @@ export function Sidebar({ }: SidebarProps) {
       icon: Home,
     },
     {
-      title: "수주 관리",
-      href: "/orders",
-      icon: FileText,
-    },
-    {
       title: "채권 관리", 
       href: "/receivables",
       icon: CreditCard,
+    },
+    {
+      title: "수주 관리",
+      href: "/orders",
+      icon: FileText,
     },
     {
       title: "실적 관리",
@@ -88,6 +87,7 @@ export function Sidebar({ }: SidebarProps) {
   const homeMenu = baseMenuItems[0]
   // 인광이에스 하위 메뉴
   const ikGroupMenus = baseMenuItems.slice(1)
+  const [isIkGroupOpen, setIsIkGroupOpen] = useState(false)
 
   // 사용자 이름의 첫 글자 추출 (아바타용)
   const getInitials = (name: string) => {
@@ -215,7 +215,6 @@ export function Sidebar({ }: SidebarProps) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={() => setIsIkGroupOpen(false)}
                     className={cn(
                       "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 group relative",
                       isActive 

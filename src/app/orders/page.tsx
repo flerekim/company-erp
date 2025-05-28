@@ -77,6 +77,7 @@ import { supabase } from "@/lib/supabase/client"
 import { FileUploadService } from "@/lib/supabase/file-upload"
 import { MainLayout } from "@/components/layout/main-layout"
 import { utils as XLSXUtils, writeFile as XLSXWriteFile } from "xlsx"
+import { motion, AnimatePresence } from "framer-motion"
 
 // 파일 개수를 포함한 Order 타입
 interface OrderWithFileCount extends Order {
@@ -117,6 +118,9 @@ export default function OrdersPage() {
   // 로딩 상태
   const [isLoading, setIsLoading] = useState(false)
   const [ordersList, setOrdersList] = useState<OrderWithFileCount[]>([])
+
+  // 신규+변경 다이얼로그 상태
+  const [showOrderGroupDialog, setShowOrderGroupDialog] = useState(false)
 
   // Supabase에서 수주 데이터 가져오기
   useEffect(() => {
@@ -215,11 +219,11 @@ export default function OrdersPage() {
   const getOrderTypeLabel = (type: OrderType) => {
     const labels = {
       new: '신규',
-      change1: '1차변경',
-      change2: '2차변경',
-      change3: '3차변경',
-      change4: '4차변경',
-      change5: '5차변경'
+      change1: '1차 변경',
+      change2: '2차 변경',
+      change3: '3차 변경',
+      change4: '4차 변경',
+      change5: '5차 변경'
     }
     return labels[type]
   }
@@ -303,6 +307,29 @@ export default function OrdersPage() {
 
     return matchesSearch && matchesClientType && matchesStatus && matchesOrderType && matchesDateRange
   })
+
+  // ordersList를 프로젝트명 기준으로 그룹화하여 대표(신규) 계약만 보여주고, 변경 계약이 있으면 금액 합산 및 유형 표시
+  const groupByProject = (orders: OrderWithFileCount[]): Record<string, OrderWithFileCount[]> => {
+    const map: Record<string, OrderWithFileCount[]> = {}
+    orders.forEach((o: OrderWithFileCount) => {
+      if (!map[o.project_name]) map[o.project_name] = []
+      map[o.project_name].push(o)
+    })
+    return map
+  }
+  const displayOrders = Object.values(groupByProject(ordersList)).map((group: OrderWithFileCount[]) => {
+    const newOrder = group.find((o) => o.order_type === 'new')
+    if (!newOrder || !newOrder.id) return null // id 등 필수값이 없으면 건너뜀
+    const changeOrders = group.filter((o) => o.order_type !== 'new')
+    const totalAmount = group.reduce((sum, o) => sum + o.contract_amount, 0)
+    return {
+      ...newOrder,
+      contract_amount: totalAmount,
+      order_type: changeOrders.length > 0 ? 'new+change' : 'new',
+      change_orders: changeOrders,
+      all_orders: group, // 팝오버/다이얼로그용 전체 계약
+    } as OrderWithFileCount & { order_type: string; change_orders: OrderWithFileCount[]; all_orders: OrderWithFileCount[] }
+  }).filter(Boolean)
 
   // 새 수주 등록
   const handleCreateOrder = () => {
@@ -401,8 +428,13 @@ export default function OrdersPage() {
 
     try {
       setIsLoading(true)
-      await orderService.delete(selectedOrder.id)
-      
+      // Supabase에서 해당 프로젝트의 모든 계약을 한 번에 삭제
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .eq('project_name', selectedOrder.project_name)
+      if (error) throw error
+
       // 목록 새로고침
       await refreshOrders()
       setIsDeleteDialogOpen(false)
@@ -467,13 +499,13 @@ export default function OrdersPage() {
   // 엑셀 내보내기 함수 추가 (xlsx 라이브러리 필요)
   const handleExportExcel = () => {
     // 테이블 데이터 엑셀로 변환
-    const exportData = filteredOrders.map(order => ({
+    const exportData = displayOrders.filter(Boolean).map((order) => ({
       상태: getStatusLabel(order.status),
       고객사유형: order.client_type === 'government' ? '관수' : '민수',
       프로젝트명: order.project_name,
       거래처: order.company_name,
       계약금액: order.contract_amount,
-      수주유형: getOrderTypeLabel(order.order_type),
+      수주유형: String(order.order_type) === 'new+change' ? '신규+변경' : getOrderTypeLabel(order.order_type as OrderType),
       계약일: formatDate(order.contract_date),
       진행률: order.progress_percentage + '%',
       오염정보: getContaminationDisplay(order.contamination_info),
@@ -490,7 +522,7 @@ export default function OrdersPage() {
     <MainLayout>
       <div className="py-6 px-10">
         <Card>
-          <CardHeader className="pb-4">
+          <CardHeader className="pb-4 overflow-x-hidden">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               {/* 타이틀/설명 왼쪽 고정 */}
               <div className="flex-shrink-0 min-w-[220px]">
@@ -618,144 +650,159 @@ export default function OrdersPage() {
                         <p className="mt-2 text-sm text-muted-foreground">데이터를 불러오는 중...</p>
                       </TableCell>
                     </TableRow>
-                  ) : filteredOrders.length === 0 ? (
+                  ) : displayOrders.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={12} className="text-center py-8">
                         <p className="text-muted-foreground">조회된 수주가 없습니다.</p>
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredOrders.map((order) => (
-                      <TableRow key={order.id}>
-                        <TableCell className="text-center">
-                          <Badge className={getStatusBadge(order.status)}>
-                            {getStatusLabel(order.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={getClientTypeBadge(order.client_type)}>
-                            {order.client_type === 'government' ? '관수' : '민수'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center max-w-[200px] truncate">
-                          {order.project_name}
-                        </TableCell>
-                        <TableCell className="text-center">{order.company_name}</TableCell>
-                        <TableCell className="text-center">
-                          {formatCurrency(order.contract_amount)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {getOrderTypeLabel(order.order_type)}
-                        </TableCell>
-                        <TableCell className="text-center">{formatDate(order.contract_date)}</TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="w-12 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                                style={{ width: `${order.progress_percentage}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-xs text-gray-600 min-w-[30px]">
-                              {order.progress_percentage}%
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                className="h-auto p-2 text-xs hover:bg-gray-100"
+                    displayOrders.filter(Boolean).map((order) => {
+                      const o = order as any // 타입 오류 방지용
+                      return (
+                        <TableRow key={o.id}>
+                          <TableCell className="text-center">
+                            <Badge className={getStatusBadge(o.status)}>
+                              {getStatusLabel(o.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge className={getClientTypeBadge(o.client_type)}>
+                              {o.client_type === 'government' ? '관수' : '민수'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center max-w-[200px] truncate">
+                            {o.project_name}
+                          </TableCell>
+                          <TableCell className="text-center">{o.company_name}</TableCell>
+                          <TableCell className="text-center">
+                            {formatCurrency(o.contract_amount)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {String(o.order_type) === 'new+change' ? (
+                              <button
+                                className="underline text-blue-600 hover:text-blue-800 cursor-pointer"
+                                onClick={() => {
+                                  setSelectedOrder(o as Order)
+                                  setShowOrderGroupDialog(true)
+                                }}
                               >
-                                <div className="flex items-center gap-1">
-                                  <span>{getContaminationDisplay(order.contamination_info)}</span>
-                                  <Info className="h-3 w-3 text-gray-400" />
-                                </div>
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-80" align="center">
-                              <div className="space-y-3">
-                                <div className="font-medium text-sm border-b pb-2">
-                                  오염정보 상세내역
-                                </div>
-                                <div className="space-y-2">
-                                  {(() => {
-                                    const { foundGroups, detectedSubstances } = getContaminationGroups(order.contamination_info)
-                                    let contaminationDetails: string | null = null
-                                    const infoArr = toContaminationArray(order.contamination_info)
-                                    if (infoArr.length > 0) {
-                                      contaminationDetails = infoArr.map((item: any) => `${item.type} (${item.value} mg/kg)`).join(', ')
-                                    }
-                                    return (
-                                      <>
-                                        {foundGroups.length > 0 && (
-                                          <div>
-                                            <div className="text-xs text-gray-500 mb-1">검출된 오염물질 그룹:</div>
-                                            <div className="flex flex-wrap gap-1">
-                                              {foundGroups.map((group, index) => (
-                                                <Badge key={index} variant="secondary" className="text-xs">
-                                                  {group}
-                                                </Badge>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                        {contaminationDetails && (
-                                          <div>
-                                            <div className="text-xs text-gray-500 mb-1">구체적 물질 및 농도:</div>
-                                            <div className="text-xs text-gray-700">
-                                              {contaminationDetails}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </>
-                                    )
-                                  })()}
-                                </div>
+                                신규+변경
+                              </button>
+                            ) : (
+                              getOrderTypeLabel(o.order_type as OrderType)
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">{formatDate(o.contract_date)}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="w-12 bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                  style={{ width: `${o.progress_percentage}%` }}
+                                ></div>
                               </div>
-                            </PopoverContent>
-                          </Popover>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={getTransportTypeBadge(order.transport_type)}>
-                            {getTransportTypeLabel(order.transport_type)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleFileManager(order)}
-                            className="flex items-center justify-center gap-2 mx-auto"
-                          >
-                            <FileText className="h-4 w-4" />
-                            <span className="text-sm text-muted-foreground">
-                              {order.fileCount}
-                            </span>
-                          </Button>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditOrder(order)}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                수정
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDeleteConfirm(order)}>
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                삭제
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                              <span className="text-xs text-gray-600 min-w-[30px]">
+                                {o.progress_percentage}%
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  className="h-auto p-2 text-xs hover:bg-gray-100"
+                                >
+                                  <div className="flex items-center gap-1">
+                                    <span>{getContaminationDisplay(o.contamination_info)}</span>
+                                    <Info className="h-3 w-3 text-gray-400" />
+                                  </div>
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-80" align="center">
+                                <div className="space-y-3">
+                                  <div className="font-medium text-sm border-b pb-2">
+                                    오염정보 상세내역
+                                  </div>
+                                  <div className="space-y-2">
+                                    {(() => {
+                                      const { foundGroups, detectedSubstances } = getContaminationGroups(o.contamination_info)
+                                      let contaminationDetails: string | null = null
+                                      const infoArr = toContaminationArray(o.contamination_info)
+                                      if (infoArr.length > 0) {
+                                        contaminationDetails = infoArr.map((item: any) => `${item.type} (${item.value} mg/kg)`).join(', ')
+                                      }
+                                      return (
+                                        <>
+                                          {foundGroups.length > 0 && (
+                                            <div>
+                                              <div className="text-xs text-gray-500 mb-1">검출된 오염물질 그룹:</div>
+                                              <div className="flex flex-wrap gap-1">
+                                                {foundGroups.map((group, index) => (
+                                                  <Badge key={index} variant="secondary" className="text-xs">
+                                                    {group}
+                                                  </Badge>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+                                          {contaminationDetails && (
+                                            <div>
+                                              <div className="text-xs text-gray-500 mb-1">구체적 물질 및 농도:</div>
+                                              <div className="text-xs text-gray-700">
+                                                {contaminationDetails}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </>
+                                      )
+                                    })()}
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge className={getTransportTypeBadge(o.transport_type)}>
+                              {getTransportTypeLabel(o.transport_type)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleFileManager(o)}
+                              className="flex items-center justify-center gap-2 mx-auto"
+                            >
+                              <FileText className="h-4 w-4" />
+                              <span className="text-sm text-muted-foreground">
+                                {o.fileCount}
+                              </span>
+                            </Button>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditOrder(o)}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  수정
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDeleteConfirm(o)}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  삭제
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -789,7 +836,7 @@ export default function OrdersPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>정말 삭제하시겠습니까?</AlertDialogTitle>
               <AlertDialogDescription>
-                이 수주 정보를 삭제하면 되돌릴 수 없습니다. 계속하시겠습니까?
+                이 프로젝트의 모든 계약(신규 및 변경 계약 포함)이 삭제됩니다. 계속하시겠습니까?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -813,6 +860,42 @@ export default function OrdersPage() {
             projectName={selectedOrder.project_name}
           />
         )}
+
+        {/* 신규+변경 전체 계약 내역 다이얼로그 */}
+        <Dialog open={showOrderGroupDialog} onOpenChange={setShowOrderGroupDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>전체 계약 내역</DialogTitle>
+              <DialogDescription>이 프로젝트의 신규 및 변경 계약 전체 내역입니다.</DialogDescription>
+            </DialogHeader>
+            {selectedOrder && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border text-sm">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="border px-3 py-2">수주유형</th>
+                      <th className="border px-3 py-2">상태</th>
+                      <th className="border px-3 py-2">계약일</th>
+                      <th className="border px-3 py-2">계약금액</th>
+                      <th className="border px-3 py-2">진행률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedOrder.all_orders.map((o: any) => (
+                      <tr key={o.id}>
+                        <td className="border px-3 py-2 text-center">{getOrderTypeLabel(o.order_type as OrderType)}</td>
+                        <td className="border px-3 py-2 text-center">{getStatusLabel(o.status as OrderStatus)}</td>
+                        <td className="border px-3 py-2 text-center">{formatDate(o.contract_date)}</td>
+                        <td className="border px-3 py-2 text-right">{formatCurrency(o.contract_amount)}</td>
+                        <td className="border px-3 py-2 text-center">{o.progress_percentage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   )
