@@ -16,7 +16,8 @@ import {
   Settings,
   Building2,
   BarChart3,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Home
 } from "lucide-react"
 
 interface SidebarProps {
@@ -37,9 +38,9 @@ export function Sidebar({ }: SidebarProps) {
   // 기본 메뉴 항목
   const baseMenuItems = [
     {
-      title: "대시보드",
-      href: "/dashboard",
-      icon: LayoutDashboard,
+      title: "홈",
+      href: "/",
+      icon: Home,
     },
     {
       title: "수주 관리",

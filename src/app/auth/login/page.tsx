@@ -19,7 +19,7 @@ export default function LoginPage() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirectTo') || '/dashboard'
+  const redirectTo = searchParams.get('redirectTo') || '/'
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,7 +40,7 @@ export default function LoginPage() {
       // 2. Supabase Auth로 로그인 시도
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
-        password,
+        password
       })
 
       if (authError) {

@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase/client'
 import { UserProfile } from '@/types/auth'
+import { initializeStorageBuckets } from '@/lib/supabase/storage-init'
 
 interface AuthContextType {
   user: User | null
@@ -60,17 +61,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // 초기 세션 확인
+    // 초기 세션 확인 - 타임아웃 제거하고 안정적인 세션 복원
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (session?.user) {
-        setUser(session.user)
-        const profileData = await fetchProfile(session.user.id)
-        setProfile(profileData)
+      try {
+        console.log('🔄 세션 복원 시작...')
+        
+        // 세션 복원 시도 (타임아웃 없이)
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('세션 복원 오류:', error)
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+        
+        if (session?.user) {
+          console.log('✅ 세션 복원 성공:', session.user.email)
+          setUser(session.user)
+          
+          // 프로필 데이터 조회
+          const profileData = await fetchProfile(session.user.id)
+          setProfile(profileData)
+          
+          // Storage 초기화를 백그라운드에서 시도
+          setTimeout(async () => {
+            try {
+              console.log('Storage 초기화 시도...')
+              const success = await initializeStorageBuckets()
+              if (success) {
+                console.log('✅ Storage buckets 초기화 완료')
+              } else {
+                console.log('⚠️ Storage buckets 초기화 건너뜀 (중요하지 않음)')
+              }
+            } catch (storageError) {
+              console.log('⚠️ Storage 초기화 실패 (앱은 정상 작동):', storageError)
+            }
+          }, 1000)
+        } else {
+          console.log('❌ 저장된 세션 없음')
+          setUser(null)
+          setProfile(null)
+        }
+        
+        setLoading(false)
+      } catch (error) {
+        console.error('세션 초기화 오류:', error)
+        // 에러 발생 시에도 로딩 상태를 해제하여 UI가 멈추지 않도록 함
+        setLoading(false)
+        setUser(null)
+        setProfile(null)
       }
-      
-      setLoading(false)
     }
 
     getInitialSession()
@@ -78,15 +120,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session?.user) {
-          setUser(session.user)
-          const profileData = await fetchProfile(session.user.id)
-          setProfile(profileData)
-        } else {
-          setUser(null)
-          setProfile(null)
+        console.log('🔄 인증 상태 변경:', event, session?.user?.email || 'no user')
+        
+        try {
+          if (event === 'SIGNED_IN' && session?.user) {
+            console.log('✅ 로그인 완료:', session.user.email)
+            setUser(session.user)
+            const profileData = await fetchProfile(session.user.id)
+            setProfile(profileData)
+          } else if (event === 'SIGNED_OUT') {
+            console.log('❌ 로그아웃 완료')
+            setUser(null)
+            setProfile(null)
+          } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+            console.log('🔄 토큰 갱신 완료:', session.user.email)
+            setUser(session.user)
+            // 토큰 갱신 시에는 프로필을 다시 조회하지 않음 (성능 최적화)
+          }
+          
+          setLoading(false)
+        } catch (error) {
+          console.error('인증 상태 변경 처리 오류:', error)
+          setLoading(false)
         }
-        setLoading(false)
       }
     )
 

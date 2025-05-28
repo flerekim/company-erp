@@ -59,6 +59,7 @@ import { OverdueLevels } from "@/components/overdue/overdue-levels"
 import { OverdueDetails } from "@/components/overdue/overdue-details"
 import { receivableService } from "@/lib/supabase/database"
 import { paymentService } from "@/lib/supabase/database"
+import { MainLayout } from "@/components/layout/main-layout"
 
 // 라벨 상수
 const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
@@ -224,258 +225,260 @@ export default function ReceivablesPage() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">채권 관리</h1>
-      </div>
+    <MainLayout>
+      <div className="container mx-auto py-6 space-y-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">채권 관리</h1>
+        </div>
 
-      {/* 연체 단계별 현황 */}
-      <OverdueLevels receivables={receivables} />
+        {/* 연체 단계별 현황 */}
+        <OverdueLevels receivables={receivables} />
 
-      {/* 연체 알림 */}
-      <OverdueAlerts receivables={receivables} />
+        {/* 연체 알림 */}
+        <OverdueAlerts receivables={receivables} />
 
-      {/* 통계 대시보드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* 통계 대시보드 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 채권</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(stats.total_amount)}</div>
+              <div className="text-sm text-gray-500">{filteredReceivables.length}건</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">수금완료</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid_amount)}</div>
+              <div className="text-sm text-green-500">수금률 {stats.collection_rate}%</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">미수금</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{formatCurrency(stats.remaining_amount)}</div>
+              <div className="text-sm text-blue-500">
+                관수: {formatCurrency(stats.by_client_type.government.amount)}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">연체금액</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.overdue_amount)}</div>
+              <div className="text-sm text-red-500">
+                {stats.by_overdue_level.warning + stats.by_overdue_level.longterm + stats.by_overdue_level.bad}건 연체
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">부실채권</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-800">{stats.by_overdue_level.bad}건</div>
+              <div className="text-sm text-red-600">181일+ 연체</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 필터 섹션 */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 채권</CardTitle>
+          <CardHeader>
+            <CardTitle>필터</CardTitle>
+            <CardDescription>채권 검색 및 필터링</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.total_amount)}</div>
-            <div className="text-sm text-gray-500">{filteredReceivables.length}건</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">수금완료</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.paid_amount)}</div>
-            <div className="text-sm text-green-500">수금률 {stats.collection_rate}%</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">미수금</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{formatCurrency(stats.remaining_amount)}</div>
-            <div className="text-sm text-blue-500">
-              관수: {formatCurrency(stats.by_client_type.government.amount)}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input
+                placeholder="채권번호, 프로젝트명, 고객사 검색"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <Select value={clientTypeFilter} onValueChange={(value) => setClientTypeFilter(value as ClientType | "all")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="고객사 유형" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="government">관수</SelectItem>
+                  <SelectItem value="private">민수</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as PaymentStatus | "all")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="결제 상태" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="unpaid">미수</SelectItem>
+                  <SelectItem value="partial">부분수금</SelectItem>
+                  <SelectItem value="paid">완료</SelectItem>
+                  <SelectItem value="overdue">연체</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
+        {/* 채권 목록 */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">연체금액</CardTitle>
+          <CardHeader>
+            <CardTitle>채권 목록</CardTitle>
+            <CardDescription>총 {filteredReceivables.length}건의 채권</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.overdue_amount)}</div>
-            <div className="text-sm text-red-500">
-              {stats.by_overdue_level.warning + stats.by_overdue_level.longterm + stats.by_overdue_level.bad}건 연체
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">부실채권</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-800">{stats.by_overdue_level.bad}건</div>
-            <div className="text-sm text-red-600">181일+ 연체</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 필터 섹션 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>필터</CardTitle>
-          <CardDescription>채권 검색 및 필터링</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Input
-              placeholder="채권번호, 프로젝트명, 고객사 검색"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <Select value={clientTypeFilter} onValueChange={(value) => setClientTypeFilter(value as ClientType | "all")}>
-              <SelectTrigger>
-                <SelectValue placeholder="고객사 유형" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="government">관수</SelectItem>
-                <SelectItem value="private">민수</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as PaymentStatus | "all")}>
-              <SelectTrigger>
-                <SelectValue placeholder="결제 상태" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="unpaid">미수</SelectItem>
-                <SelectItem value="partial">부분수금</SelectItem>
-                <SelectItem value="paid">완료</SelectItem>
-                <SelectItem value="overdue">연체</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 채권 목록 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>채권 목록</CardTitle>
-          <CardDescription>총 {filteredReceivables.length}건의 채권</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>채권번호</TableHead>
-                <TableHead>고객사</TableHead>
-                <TableHead>프로젝트명</TableHead>
-                <TableHead>계약금액</TableHead>
-                <TableHead>미수금액</TableHead>
-                <TableHead>만료일</TableHead>
-                <TableHead>상태</TableHead>
-                <TableHead>담당자</TableHead>
-                <TableHead className="text-right">액션</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredReceivables.map((receivable) => (
-                <TableRow key={receivable.id}>
-                  <TableCell className="font-mono">{receivable.receivable_number}</TableCell>
-                  <TableCell>
-                    <Badge className={
-                      receivable.client_type === 'government' 
-                        ? 'bg-purple-100 text-purple-800'
-                        : 'bg-cyan-100 text-cyan-800'
-                    }>
-                      {receivable.client_type === 'government' ? '관수' : '민수'}
-                    </Badge>
-                    <div className="mt-1">{receivable.company_name}</div>
-                  </TableCell>
-                  <TableCell className="max-w-[300px]">
-                    <div className="truncate" title={receivable.project_name}>
-                      {receivable.project_name}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {formatCurrency(receivable.contract_amount)}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {formatCurrency(receivable.remaining_amount)}
-                  </TableCell>
-                  <TableCell>{formatDate(receivable.due_date)}</TableCell>
-                  <TableCell>
-                    <Badge className={
-                      receivable.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
-                      receivable.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
-                      receivable.payment_status === 'overdue' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }>
-                      {receivable.payment_status === 'paid' ? '완료' :
-                       receivable.payment_status === 'partial' ? '부분수금' :
-                       receivable.payment_status === 'overdue' ? '연체' :
-                       '미수'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <div className="font-medium">{receivable.primary_manager}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>액션</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => {
-                          setSelectedReceivable(receivable)
-                          setShowOverdueDetails(true)
-                        }}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          상세보기
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => {
-                          alert(`${receivable.company_name}에 입금 요청 연락을 진행합니다.`)
-                        }}>
-                          <Phone className="mr-2 h-4 w-4" />
-                          전화연락
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => {
-                          alert(`${receivable.company_name}에 이메일을 발송합니다.`)
-                        }}>
-                          <Mail className="mr-2 h-4 w-4" />
-                          이메일 발송
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => {
-                          setSelectedReceivable(receivable)
-                          setIsPaymentDialogOpen(true)
-                        }}>
-                          <DollarSign className="mr-2 h-4 w-4" />
-                          입금 처리
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>채권번호</TableHead>
+                  <TableHead>고객사</TableHead>
+                  <TableHead>프로젝트명</TableHead>
+                  <TableHead>계약금액</TableHead>
+                  <TableHead>미수금액</TableHead>
+                  <TableHead>만료일</TableHead>
+                  <TableHead>상태</TableHead>
+                  <TableHead>담당자</TableHead>
+                  <TableHead className="text-right">액션</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {filteredReceivables.map((receivable) => (
+                  <TableRow key={receivable.id}>
+                    <TableCell className="font-mono">{receivable.receivable_number}</TableCell>
+                    <TableCell>
+                      <Badge className={
+                        receivable.client_type === 'government' 
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-cyan-100 text-cyan-800'
+                      }>
+                        {receivable.client_type === 'government' ? '관수' : '민수'}
+                      </Badge>
+                      <div className="mt-1">{receivable.company_name}</div>
+                    </TableCell>
+                    <TableCell className="max-w-[300px]">
+                      <div className="truncate" title={receivable.project_name}>
+                        {receivable.project_name}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {formatCurrency(receivable.contract_amount)}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {formatCurrency(receivable.remaining_amount)}
+                    </TableCell>
+                    <TableCell>{formatDate(receivable.due_date)}</TableCell>
+                    <TableCell>
+                      <Badge className={
+                        receivable.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
+                        receivable.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
+                        receivable.payment_status === 'overdue' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }>
+                        {receivable.payment_status === 'paid' ? '완료' :
+                         receivable.payment_status === 'partial' ? '부분수금' :
+                         receivable.payment_status === 'overdue' ? '연체' :
+                         '미수'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div className="font-medium">{receivable.primary_manager}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>액션</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => {
+                            setSelectedReceivable(receivable)
+                            setShowOverdueDetails(true)
+                          }}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            상세보기
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => {
+                            alert(`${receivable.company_name}에 입금 요청 연락을 진행합니다.`)
+                          }}>
+                            <Phone className="mr-2 h-4 w-4" />
+                            전화연락
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => {
+                            alert(`${receivable.company_name}에 이메일을 발송합니다.`)
+                          }}>
+                            <Mail className="mr-2 h-4 w-4" />
+                            이메일 발송
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => {
+                            setSelectedReceivable(receivable)
+                            setIsPaymentDialogOpen(true)
+                          }}>
+                            <DollarSign className="mr-2 h-4 w-4" />
+                            입금 처리
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-      {/* 연체 채권 상세 정보 */}
-      <Dialog open={showOverdueDetails} onOpenChange={setShowOverdueDetails}>
-          <DialogContent className=" max-h-[90vh] overflow-y-auto">
+        {/* 연체 채권 상세 정보 */}
+        <Dialog open={showOverdueDetails} onOpenChange={setShowOverdueDetails}>
+            <DialogContent className=" max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>연체 채권 상세 정보</DialogTitle>
+                <DialogDescription>
+                  {selectedReceivable?.receivable_number} 상세 정보
+                </DialogDescription>
+              </DialogHeader>
+              {selectedReceivable && (
+                <OverdueDetails receivable={selectedReceivable} />
+              )}
+            </DialogContent>
+          </Dialog>
+
+        {/* 입금 처리 다이얼로그 */}
+        <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle>연체 채권 상세 정보</DialogTitle>
+              <DialogTitle>입금 처리</DialogTitle>
               <DialogDescription>
-                {selectedReceivable?.receivable_number} 상세 정보
+                새로운 입금 내역을 등록하세요.
               </DialogDescription>
             </DialogHeader>
             {selectedReceivable && (
-              <OverdueDetails receivable={selectedReceivable} />
+              <PaymentForm
+                receivable={selectedReceivable}
+                onSubmit={handlePaymentSubmit}
+                onCancel={() => setIsPaymentDialogOpen(false)}
+              />
             )}
           </DialogContent>
         </Dialog>
-
-      {/* 입금 처리 다이얼로그 */}
-      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>입금 처리</DialogTitle>
-            <DialogDescription>
-              새로운 입금 내역을 등록하세요.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedReceivable && (
-            <PaymentForm
-              receivable={selectedReceivable}
-              onSubmit={handlePaymentSubmit}
-              onCancel={() => setIsPaymentDialogOpen(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+      </div>
+    </MainLayout>
   )
 }

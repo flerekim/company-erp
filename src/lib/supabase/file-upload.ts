@@ -5,7 +5,7 @@ import { supabase } from './client'
 import { OrderFile } from '@/types/order'
 
 export class FileUploadService {
-  private static readonly BUCKET_NAME = 'order-files'
+  private static readonly BUCKET_NAME = 'order-attachments'
   private static readonly MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
   private static readonly ALLOWED_TYPES = [
     'application/pdf',
@@ -15,7 +15,10 @@ export class FileUploadService {
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'image/jpeg',
     'image/png',
-    'image/gif'
+    'image/gif',
+    'text/plain',
+    'application/zip',
+    'application/x-zip-compressed'
   ]
 
   /**
@@ -42,19 +45,35 @@ export class FileUploadService {
   }
 
   /**
-   * 파일명 정규화 (한글, 특수문자 처리)
+   * 파일명 정규화 (한글, 특수문자 처리 강화 및 디버깅 로그 추가)
    */
   static normalizeFileName(fileName: string, orderId: string): string {
-    const timestamp = Date.now()
-    const extension = fileName.split('.').pop()
-    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '')
+    const timestamp = Date.now();
+    const extension = fileName.split('.').pop() || 'file';
+    let nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
+    if (fileName.lastIndexOf('.') === -1) { // 확장자가 없는 파일의 경우
+        nameWithoutExt = fileName;
+    }
+
+    // 1. 모든 공백을 언더스코어로 변경
+    let safeName = nameWithoutExt.replace(/\s+/g, '_');
     
-    // 한글과 특수문자를 안전한 문자로 변환
-    const safeName = nameWithoutExt
-      .replace(/[^a-zA-Z0-9가-힣\-_]/g, '_')
-      .substring(0, 50) // 이름 길이 제한
+    // 2. 허용되지 않는 모든 특수문자를 언더스코어로 변경 (더 넓은 범위)
+    // Supabase는 일반적으로 URL에 안전한 문자만 허용 (알파벳, 숫자, -, _, .)
+    safeName = safeName.replace(/[^a-zA-Z0-9\-_\.]/g, '_');
     
-    return `${orderId}/${timestamp}_${safeName}.${extension}`
+    // 3. 연속된 언더스코어를 하나로 축약
+    safeName = safeName.replace(/__+/g, '_');
+    
+    // 4. 이름 길이 제한 (확장자 제외)
+    safeName = safeName.substring(0, 50);
+
+    // 5. 혹시나 이름이 비거나 언더스코어만 남는 경우 대체 이름 사용
+    if (!safeName || safeName.replace(/_/g, '').length === 0) {
+        safeName = `file_${timestamp}`;
+    }
+    
+    return `${orderId}/${timestamp}_${safeName}.${extension}`;
   }
 
   /**
@@ -85,21 +104,77 @@ export class FileUploadService {
 
       if (uploadError) {
         console.error('File upload error:', uploadError)
-        return { success: false, error: '파일 업로드에 실패했습니다.' }
+        
+        // Storage Objects 정책 누락 (가장 흔한 오류)
+        if (uploadError.message.includes('new row violates row-level security policy') ||
+            uploadError.message.includes('insufficient_privilege') ||
+            uploadError.message.includes('violates row-level security')) {
+          return { 
+            success: false, 
+            error: '🔒 Storage Objects 정책이 누락되었습니다!\n\n📋 해결방법:\n1. Supabase 대시보드 > SQL Editor\n2. storage-objects-fix.sql 파일 실행\n3. 애플리케이션 새로고침\n\n💡 "Other policies under storage.objects"에 정책이 있어야 합니다.' 
+          }
+        }
+        
+        // 일반적인 정책 관련 오류
+        if (uploadError.message.includes('policy')) {
+          return { 
+            success: false, 
+            error: '🔒 Storage 정책 설정 오류입니다.\n\n해결방법:\n1. Supabase 대시보드 > Storage > Policies\n2. storage-objects-fix.sql 파일 실행\n3. 또는 관리자에게 문의하세요.' 
+          }
+        }
+        
+        // Storage 버킷 관련 오류 처리
+        if (uploadError.message.includes('Bucket not found') || 
+            uploadError.message.includes('bucket does not exist')) {
+          return { 
+            success: false, 
+            error: '📁 Storage 버킷이 없습니다.\n\n해결방법:\n1. Supabase 대시보드 > Storage\n2. "order-attachments" 버킷 생성\n3. Public 설정 활성화' 
+          }
+        }
+        
+        // 권한 관련 오류 처리
+        if (uploadError.message.includes('permission') ||
+            uploadError.message.includes('unauthorized')) {
+          return {
+            success: false,
+            error: '�� 파일 업로드 권한이 없습니다.\n관리자에게 Storage 권한 설정을 요청해주세요.'
+          }
+        }
+        
+        // 파일 크기 제한 오류
+        if (uploadError.message.includes('file size') ||
+            uploadError.message.includes('too large')) {
+          return {
+            success: false,
+            error: '📏 파일 크기가 너무 큽니다. 10MB 이하의 파일만 업로드 가능합니다.'
+          }
+        }
+        
+        // 기타 오류
+        return { success: false, error: `❌ 파일 업로드에 실패했습니다: ${uploadError.message}` }
       }
 
-      // 파일 URL 생성
+      if (!uploadData?.path) {
+        return { success: false, error: '❌ 파일 업로드 경로를 가져올 수 없습니다.' }
+      }
+
+      // 파일 URL 생성 - publicUrl 확실하게 생성
       const { data: urlData } = supabase.storage
         .from(this.BUCKET_NAME)
-        .getPublicUrl(normalizedName)
+        .getPublicUrl(uploadData.path)
+
+      const publicUrl = urlData.publicUrl
+      if (!publicUrl) {
+        return { success: false, error: '❌ 파일 URL을 생성할 수 없습니다.' }
+      }
 
       // 데이터베이스에 파일 정보 저장
-      const fileRecord: Omit<OrderFile, 'id' | 'uploaded_at'> = {
+      const fileRecord = {
         order_id: orderId,
         file_name: file.name,
         file_type: fileType,
         file_size: file.size,
-        file_url: urlData.publicUrl,
+        file_url: publicUrl, // 반드시 유효한 URL
         uploaded_by: '시스템' // 나중에 실제 사용자 정보로 교체
       }
 
@@ -111,19 +186,23 @@ export class FileUploadService {
 
       if (dbError) {
         console.error('Database insert error:', dbError)
-        // 스토리지에서 업로드된 파일 삭제
-        await supabase.storage
-          .from(this.BUCKET_NAME)
-          .remove([normalizedName])
+        // 스토리지에서 업로드된 파일 삭제 (롤백)
+        try {
+          await supabase.storage
+            .from(this.BUCKET_NAME)
+            .remove([uploadData.path])
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup uploaded file:', cleanupError)
+        }
         
-        return { success: false, error: '파일 정보 저장에 실패했습니다.' }
+        return { success: false, error: `💾 파일 정보 저장에 실패했습니다: ${dbError.message}` }
       }
 
       return { success: true, data: dbData as OrderFile }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload service error:', error)
-      return { success: false, error: '파일 업로드 중 오류가 발생했습니다.' }
+      return { success: false, error: '❌ 파일 업로드 중 예상치 못한 오류가 발생했습니다.' }
     }
   }
 
@@ -201,7 +280,7 @@ export class FileUploadService {
       .order('uploaded_at', { ascending: false })
 
     if (error) {
-      console.error('Get order files error:', error)
+      console.error('[FileUploadService] Get order files error:', error)
       return []
     }
 

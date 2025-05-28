@@ -2,7 +2,7 @@
 // 수주 관리 시스템 전용 타입 정의
 
 export type ClientType = 'government' | 'private'
-export type OrderType = 'new' | 'change1' | 'change2' | 'change3'
+export type OrderType = 'new' | 'change1' | 'change2' | 'change3' | 'change4' | 'change5'
 export type TransportType = 'onsite' | 'transport'
 export type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'cancelled'
 

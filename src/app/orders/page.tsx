@@ -65,29 +65,38 @@ import {
 import { Order, OrderFormData, ClientType, OrderStatus, OrderType, OrderFile } from "@/types/order"
 import { OrderForm } from "@/components/forms/order-form"
 import { orderService } from "@/lib/supabase/database"
+import { FileManagerDialog } from "@/components/file-manager/file-manager-dialog"
+import { supabase } from "@/lib/supabase/client"
+import { FileUploadService } from "@/lib/supabase/file-upload"
+import { MainLayout } from "@/components/layout/main-layout"
+
+// 파일 개수를 포함한 Order 타입
+interface OrderWithFileCount extends Order {
+  fileCount: number
+}
 
 export default function OrdersPage() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [clientTypeFilter, setClientTypeFilter] = useState<ClientType | "all">("all")
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all")
-  const [orderTypeFilter, setOrderTypeFilter] = useState<OrderType | "all">("all")
-  const [dateRangeFilter, setDateRangeFilter] = useState<{
-    startDate: string;
-    endDate: string;
-  }>({
-    startDate: "",
-    endDate: ""
+  const [filters, setFilters] = useState({
+    searchTerm: "",
+    clientType: "all" as ClientType | "all",
+    status: "all" as OrderStatus | "all",
+    orderType: "all" as OrderType | "all",
+    dateRange: {
+      startDate: "",
+      endDate: ""
+    }
   })
   
   // 다이얼로그 상태
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isFileManagerOpen, setIsFileManagerOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
   
   // 로딩 상태
   const [isLoading, setIsLoading] = useState(false)
-  const [ordersList, setOrdersList] = useState<Order[]>([])
+  const [ordersList, setOrdersList] = useState<OrderWithFileCount[]>([])
 
   // Supabase에서 수주 데이터 가져오기
   useEffect(() => {
@@ -95,9 +104,45 @@ export default function OrdersPage() {
       try {
         setIsLoading(true)
         const data = await orderService.getAll()
-        setOrdersList(data)
-      } catch (error) {
-        console.error('수주 데이터 조회 실패:', error)
+        
+        // 각 수주별 파일 개수 조회 (안전한 방식)
+        const ordersWithFileCount = await Promise.all(
+          data.map(async (order) => {
+            try {
+              const { count, error } = await supabase
+                .from('order_files')
+                .select('*', { count: 'exact', head: true })
+                .eq('order_id', order.id)
+              
+              if (error) {
+                // 테이블 접근 오류는 로그만 남기고 0으로 처리
+                console.warn(`파일 개수 조회 실패 for order ${order.id}:`, error.message)
+                return {
+                  ...order,
+                  fileCount: 0
+                }
+              }
+              
+              return {
+                ...order,
+                fileCount: count || 0
+              }
+            } catch (error: any) {
+              // 예외 발생 시에도 0으로 처리하여 앱 실행 중단 방지
+              console.warn(`파일 개수 조회 예외 for order ${order.id}:`, error?.message || error)
+              return {
+                ...order,
+                fileCount: 0
+              }
+            }
+          })
+        )
+        
+        setOrdersList(ordersWithFileCount)
+      } catch (error: any) {
+        console.error('수주 데이터 조회 실패:', error?.message || error)
+        // 수주 데이터 조회 실패 시에도 빈 배열로 설정하여 UI 깨짐 방지
+        setOrdersList([])
       } finally {
         setIsLoading(false)
       }
@@ -144,12 +189,18 @@ export default function OrdersPage() {
       : 'bg-amber-50 text-amber-700'
   }
 
+  const getTransportTypeLabel = (type: string) => {
+    return type === 'onsite' ? '부지내' : '반출'
+  }
+
   const getOrderTypeLabel = (type: OrderType) => {
     const labels = {
       new: '신규',
       change1: '1차변경',
       change2: '2차변경',
-      change3: '3차변경'
+      change3: '3차변경',
+      change4: '4차변경',
+      change5: '5차변경'
     }
     return labels[type]
   }
@@ -166,19 +217,18 @@ export default function OrdersPage() {
 
   const filteredOrders = ordersList.filter(order => {
     const matchesSearch = 
-      order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.company_name.toLowerCase().includes(searchTerm.toLowerCase())
+      order.order_number.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+      order.project_name.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+      order.company_name.toLowerCase().includes(filters.searchTerm.toLowerCase())
 
-    const matchesClientType = clientTypeFilter === "all" || order.client_type === clientTypeFilter
-    const matchesStatus = statusFilter === "all" || order.status === statusFilter
-    const matchesOrderType = orderTypeFilter === "all" || order.order_type === orderTypeFilter
+    const matchesClientType = filters.clientType === "all" || order.client_type === filters.clientType
+    const matchesStatus = filters.status === "all" || order.status === filters.status
+    const matchesOrderType = filters.orderType === "all" || order.order_type === filters.orderType
 
-    // 기간 필터 적용
     const orderDate = new Date(order.contract_date)
     const matchesDateRange = 
-      (!dateRangeFilter.startDate || orderDate >= new Date(dateRangeFilter.startDate)) &&
-      (!dateRangeFilter.endDate || orderDate <= new Date(dateRangeFilter.endDate))
+      (!filters.dateRange.startDate || orderDate >= new Date(filters.dateRange.startDate)) &&
+      (!filters.dateRange.endDate || orderDate <= new Date(filters.dateRange.endDate))
 
     return matchesSearch && matchesClientType && matchesStatus && matchesOrderType && matchesDateRange
   })
@@ -208,7 +258,6 @@ export default function OrdersPage() {
     try {
       setIsLoading(true)
 
-      // 2. 수주 데이터 Supabase에 저장 (파일 정보 포함)
       if (formMode === 'create') {
         // 수주번호 자동 생성
         const { data: lastOrder } = await orderService.getLastOrder()
@@ -219,84 +268,54 @@ export default function OrdersPage() {
         }
         const order_number = `ORD-${new Date().getFullYear()}-${nextNumber.toString().padStart(3, '0')}`
 
-        // 새 수주 생성 (파일 정보 제외)
-        const createdOrder = await orderService.create({
+        // 새 수주 생성
+        const orderDataWithoutAttachments = {
           ...data,
           order_number,
           status: 'contracted',
           progress_percentage: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          // attachments는 나중에 업데이트
-        })
+        }
+        
+        const createdOrder = await orderService.create(orderDataWithoutAttachments)
 
-        let uploadedFileDetails: OrderFile[] = []
-
-        // 파일 Supabase Storage에 업로드 (생성된 수주 ID 사용)
+        // 파일 업로드 (FileUploadService 사용)
         if (files && files.length > 0 && createdOrder?.id) {
-          for (const file of files) {
-            const encodedFileName = encodeURIComponent(file.name)
-            const filePath = `${createdOrder.id}/${Date.now()}-${encodedFileName}` // 생성된 수주 ID와 인코딩된 파일명 사용 (버킷 이름 제거)
-            const { data: uploadData } = await orderService.uploadFile(filePath, file)
-
-            // 업로드 성공 시 파일 정보 저장
-            uploadedFileDetails.push({
-              id: uploadData.id, // Supabase Storage에서 반환하는 고유 ID (가정)
-              order_id: createdOrder.id, // 생성된 수주 ID 사용
-              file_name: file.name,
-              file_type: 'other', // TODO: 파일 확장자 등으로 타입 구분 로직 추가
-              file_size: file.size,
-              file_url: uploadData.url, // Supabase Storage에서 반환하는 파일 URL (가정)
-              uploaded_at: new Date().toISOString(),
-              uploaded_by: 'current_user_id', // TODO: 현재 로그인한 사용자 ID 가져오는 로직 추가
+          const uploadResult = await FileUploadService.uploadMultipleFiles(files, createdOrder.id)
+          
+          if (uploadResult.failCount > 0) {
+            console.warn(`${uploadResult.failCount}개 파일 업로드 실패`)
+            // 실패한 파일들에 대한 로그
+            uploadResult.results.forEach(result => {
+              if (!result.success) {
+                console.error(`파일 "${result.file.name}" 업로드 실패:`, result.error)
+              }
             })
           }
-
-          // 수주 데이터에 파일 정보 업데이트
-          await orderService.update(createdOrder.id, {
-            attachments: uploadedFileDetails
-          })
         }
 
       } else if (formMode === 'edit' && selectedOrder) {
-        // 기존 첨부 파일 가져오기 (수정 시 기존 파일 유지 및 새 파일 추가)
-        const existingAttachments = selectedOrder.attachments || [];
-        let uploadedFileDetails: OrderFile[] = []
-
-        // 파일 Supabase Storage에 업로드 (기존 수주 ID 사용)
-        if (files && files.length > 0) {
-          for (const file of files) {
-            const encodedFileName = encodeURIComponent(file.name)
-            const filePath = `${selectedOrder.id}/${Date.now()}-${encodedFileName}` // 기존 수주 ID와 인코딩된 파일명 사용 (버킷 이름 제거)
-            const { data: uploadData } = await orderService.uploadFile(filePath, file)
-
-            // 업로드 성공 시 파일 정보 저장
-            uploadedFileDetails.push({
-              id: uploadData.id, // Supabase Storage에서 반환하는 고유 ID (가정)
-              order_id: selectedOrder.id, // 기존 수주 ID 사용
-              file_name: file.name,
-              file_type: 'other', // TODO: 파일 확장자 등으로 타입 구분 로직 추가
-              file_size: file.size,
-              file_url: uploadData.url, // Supabase Storage에서 반환하는 파일 URL (가정)
-              uploaded_at: new Date().toISOString(),
-              uploaded_by: 'current_user_id', // TODO: 현재 로그인한 사용자 ID 가져오는 로직 추가
-            })
-          }
-        }
-
-        const allAttachments = [...existingAttachments, ...uploadedFileDetails];
-
-        // 수주 수정 (파일 정보 업데이트)
-        await orderService.update(selectedOrder.id, {
+        // 수주 수정
+        const updateData = {
           ...data,
           updated_at: new Date().toISOString(),
-          attachments: allAttachments // 파일 정보 업데이트
-        })
+        }
+
+        await orderService.update(selectedOrder.id, updateData)
+
+        // 파일 업로드 (수정 시에도 새 파일 추가 가능)
+        if (files && files.length > 0) {
+          const uploadResult = await FileUploadService.uploadMultipleFiles(files, selectedOrder.id)
+          
+          if (uploadResult.failCount > 0) {
+            console.warn(`${uploadResult.failCount}개 파일 업로드 실패`)
+          }
+        }
       }
 
-      // 목록 새로고침
-      const updatedOrders = await orderService.getAll()
-      setOrdersList(updatedOrders)
+      // 목록 새로고침 (파일 개수 포함)
+      await refreshOrders()
       setIsFormDialogOpen(false)
     } catch (error) {
       console.error('수주 저장 실패:', error)
@@ -314,8 +333,7 @@ export default function OrdersPage() {
       await orderService.delete(selectedOrder.id)
       
       // 목록 새로고침
-      const updatedOrders = await orderService.getAll()
-      setOrdersList(updatedOrders)
+      await refreshOrders()
       setIsDeleteDialogOpen(false)
     } catch (error) {
       console.error('수주 삭제 실패:', error)
@@ -324,230 +342,303 @@ export default function OrdersPage() {
     }
   }
 
+  // 파일 관리 다이얼로그 열기
+  const handleFileManager = (order: Order) => {
+    setSelectedOrder(order)
+    setIsFileManagerOpen(true)
+  }
+
+  // 파일 변경 후 수주 목록 새로고침
+  const refreshOrders = async () => {
+    try {
+      const data = await orderService.getAll()
+      
+      // 각 수주별 파일 개수 조회 (안전한 방식)
+      const ordersWithFileCount = await Promise.all(
+        data.map(async (order) => {
+          try {
+            const { count, error } = await supabase
+              .from('order_files')
+              .select('*', { count: 'exact', head: true })
+              .eq('order_id', order.id)
+            
+            if (error) {
+              // 테이블 접근 오류는 로그만 남기고 0으로 처리
+              console.warn(`파일 개수 조회 실패 for order ${order.id}:`, error.message)
+              return {
+                ...order,
+                fileCount: 0
+              }
+            }
+            
+            return {
+              ...order,
+              fileCount: count || 0
+            }
+          } catch (error: any) {
+            // 예외 발생 시에도 0으로 처리하여 앱 실행 중단 방지
+            console.warn(`파일 개수 조회 예외 for order ${order.id}:`, error?.message || error)
+            return {
+              ...order,
+              fileCount: 0
+            }
+          }
+        })
+      )
+      
+      setOrdersList(ordersWithFileCount)
+    } catch (error: any) {
+      console.error('수주 목록 새로고침 실패:', error?.message || error)
+      // 새로고침 실패 시에도 기존 목록 유지
+    }
+  }
+
   return (
-    <div className="p-6 space-y-6">
-      {/* 페이지 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">수주 관리</h1>
-          <p className="text-gray-600 mt-1">등록된 수주 목록을 확인하고 관리합니다.</p>
-        </div>
-        <Button onClick={handleCreateOrder}>
-          <Plus className="mr-2 h-4 w-4" />
-          새 수주 등록
-        </Button>
-      </div>
-
-      {/* 검색 및 필터 영역 */}
-      <Card>
-        <CardContent className="pt-2 pb-2">
-          <div className="flex flex-col md:flex-row gap-4 items-center">
-            {/* 검색 필드 - 남은 공간 차지 */}
-            <div className="flex-1 w-full">
-              <Input
-                placeholder="수주번호, 프로젝트명, 회사명 검색..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full"
-              />
-            </div>
-
-            {/* 기간 필터 및 셀렉트 필터 그룹 */}
-            <div className="flex flex-col md:flex-row gap-4 items-center">
-              {/* 기간 필터 */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Calendar className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-600">계약일</span>
-                <Input
-                  type="date"
-                  value={dateRangeFilter.startDate}
-                  onChange={(e) => setDateRangeFilter(prev => ({ ...prev, startDate: e.target.value }))}
-                  className="w-[140px]"
-                />
-                <span className="text-gray-500">~</span>
-                <Input
-                  type="date"
-                  value={dateRangeFilter.endDate}
-                  onChange={(e) => setDateRangeFilter(prev => ({ ...prev, endDate: e.target.value }))}
-                  className="w-[140px]"
-                />
+    <MainLayout>
+      <div className="py-6 px-10">
+        <Card>
+          <CardHeader className="pb-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle className="text-4xl font-bold">수주 관리</CardTitle>
+                <CardDescription className="text-base mt-1">수주 현황을 조회하고 관리합니다.</CardDescription>
               </div>
-
-              {/* 셀렉트 필터들 */}
-              <div className="flex flex-wrap gap-4 items-center">
-                <Select
-                  value={clientTypeFilter}
-                  onValueChange={(value: ClientType | "all") => setClientTypeFilter(value)}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="거래처 유형" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">전체 거래처 유형</SelectItem>
-                    <SelectItem value="government">관급</SelectItem>
-                    <SelectItem value="private">민간</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={statusFilter}
-                  onValueChange={(value: OrderStatus | "all") => setStatusFilter(value)}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="상태" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">전체 상태</SelectItem>
-                    <SelectItem value="contracted">계약</SelectItem>
-                    <SelectItem value="in_progress">진행중</SelectItem>
-                    <SelectItem value="completed">완료</SelectItem>
-                    <SelectItem value="cancelled">취소</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={orderTypeFilter}
-                  onValueChange={(value: OrderType | "all") => setOrderTypeFilter(value)}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="수주 유형" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">전체 수주 유형</SelectItem>
-                    <SelectItem value="new">신규</SelectItem>
-                    <SelectItem value="change1">1차 변경</SelectItem>
-                    <SelectItem value="change2">2차 변경</SelectItem>
-                    <SelectItem value="change3">3차 변경</SelectItem>
-                  </SelectContent>
-                </Select>
+              <Button onClick={handleCreateOrder}>
+                <Plus className="mr-2 h-4 w-4" />
+                새 수주 등록
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {/* 통합된 필터 섹션 */}
+            <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-6">
+              <div className="max-w-6xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">검색</label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="프로젝트명 또는 거래처명"
+                        value={filters.searchTerm}
+                        onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                        className="pl-8 h-10"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">고객사 유형</label>
+                    <Select
+                      value={filters.clientType}
+                      onValueChange={(value) => setFilters(prev => ({ ...prev, clientType: value as ClientType | "all" }))}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">전체</SelectItem>
+                        <SelectItem value="government">관수</SelectItem>
+                        <SelectItem value="private">민수</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">상태</label>
+                    <Select
+                      value={filters.status}
+                      onValueChange={(value) => setFilters(prev => ({ ...prev, status: value as OrderStatus | "all" }))}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">전체</SelectItem>
+                        <SelectItem value="contracted">계약</SelectItem>
+                        <SelectItem value="in_progress">진행중</SelectItem>
+                        <SelectItem value="completed">완료</SelectItem>
+                        <SelectItem value="cancelled">취소</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">계약일 범위</label>
+                    <div className="flex gap-4">
+                      <Input
+                        type="date"
+                        value={filters.dateRange.startDate}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          dateRange: { ...prev.dateRange, startDate: e.target.value }
+                        }))}
+                        className="h-10 min-w-[140px] flex-1"
+                      />
+                      <Input
+                        type="date"
+                        value={filters.dateRange.endDate}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          dateRange: { ...prev.dateRange, endDate: e.target.value }
+                        }))}
+                        className="h-10 min-w-[140px] flex-1"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* 수주 목록 테이블 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>수주 목록</CardTitle>
-          <CardDescription>등록된 총 {ordersList.length}건의 수주</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center items-center h-48">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-          ) : filteredOrders.length === 0 ? (
-            <div className="text-center text-gray-500">해당 조건에 맞는 수주가 없습니다.</div>
-          ) : (
-            <div className="overflow-x-auto">
+            {/* 개선된 테이블 레이아웃 */}
+            <div className="rounded-md border">
               <Table>
-                <TableHeader className="text-lg">
+                <TableHeader>
                   <TableRow>
-                    <TableHead>상태</TableHead>
-                    <TableHead>고객사 유형</TableHead>
-                    <TableHead>거래처</TableHead>
-                    <TableHead className="w-[200px]">프로젝트명</TableHead>
-                    <TableHead className="text-right whitespace-nowrap">계약금액(V.A.T 포함)</TableHead>
-                    <TableHead className="pl-12">수주유형</TableHead>
-                    <TableHead>계약일</TableHead>
-                    <TableHead className="text-center">현장/운반</TableHead>
-                    <TableHead className="text-right">파일</TableHead>
-                    <TableHead className="w-[100px]"></TableHead>
+                    <TableHead className="w-[80px] text-center text-base">상태</TableHead>
+                    <TableHead className="w-[100px] text-center text-base">고객사 유형</TableHead>
+                    <TableHead className="w-[200px] text-center text-base">프로젝트명</TableHead>
+                    <TableHead className="w-[150px] text-center text-base">거래처</TableHead>
+                    <TableHead className="w-[150px] text-center text-base">계약금액(V.A.T 포함)</TableHead>
+                    <TableHead className="w-[100px] text-center text-base">수주유형</TableHead>
+                    <TableHead className="w-[120px] text-center text-base">계약일</TableHead>
+                    <TableHead className="w-[100px] text-center text-base">정화 장소</TableHead>
+                    <TableHead className="w-[120px] text-center text-base">파일</TableHead>
+                    <TableHead className="w-[80px] text-center text-base">관리</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody className="text-base">
-                  {filteredOrders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell>
-                        <Badge className={getStatusBadge(order.status)}>{getStatusLabel(order.status)}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getClientTypeBadge(order.client_type)}>
-                          {order.client_type === 'government' ? '관급' : '민간'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{order.company_name}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{order.project_name}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{formatCurrency(order.contract_amount)}</TableCell>
-                      <TableCell className="pl-12">{getOrderTypeLabel(order.order_type)}</TableCell>
-                      <TableCell>{formatDate(order.contract_date)}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge className={getTransportTypeBadge(order.transport_type)}>{order.transport_type === 'onsite' ? '현장' : '운반'}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {/* 파일 관리 링크 또는 버튼 */}
-                        <Button variant="ghost" size="sm">
-                          <FileText className="h-4 w-4 mr-1" /> {order.attachments?.length || 0}
-                        </Button>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              aria-label="Actions"
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>작업</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => handleEditOrder(order)}>
-                              <Edit className="mr-2 h-4 w-4" /> 수정
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDeleteConfirm(order)}>
-                              <Trash2 className="mr-2 h-4 w-4" /> 삭제
-                            </DropdownMenuItem>
-                            {/* 추가 작업 메뉴 */}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                        <p className="mt-2 text-sm text-muted-foreground">데이터를 불러오는 중...</p>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : filteredOrders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center py-8">
+                        <p className="text-muted-foreground">조회된 수주가 없습니다.</p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredOrders.map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell className="text-center">
+                          <Badge className={getStatusBadge(order.status)}>
+                            {getStatusLabel(order.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge className={getClientTypeBadge(order.client_type)}>
+                            {order.client_type === 'government' ? '관수' : '민수'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center max-w-[200px] truncate">
+                          {order.project_name}
+                        </TableCell>
+                        <TableCell className="text-center">{order.company_name}</TableCell>
+                        <TableCell className="text-center">
+                          {formatCurrency(order.contract_amount)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {getOrderTypeLabel(order.order_type)}
+                        </TableCell>
+                        <TableCell className="text-center">{formatDate(order.contract_date)}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge className={getTransportTypeBadge(order.transport_type)}>
+                            {getTransportTypeLabel(order.transport_type)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFileManager(order)}
+                            className="flex items-center justify-center gap-2 mx-auto"
+                          >
+                            <FileText className="h-4 w-4" />
+                            <span className="text-sm text-muted-foreground">
+                              {order.fileCount}
+                            </span>
+                          </Button>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditOrder(order)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                수정
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDeleteConfirm(order)}>
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                삭제
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* 수주 등록/수정 다이얼로그 */}
-      <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
-        <DialogContent className="sm:max-w-[600px] lg:max-w-[800px]">
-          <DialogHeader>
-            <DialogTitle>{formMode === 'create' ? '새 수주 등록' : '수주 수정'}</DialogTitle>
-            <DialogDescription>
-              수주 정보를 입력하거나 수정합니다.
-            </DialogDescription>
-          </DialogHeader>
-          {/* OrderForm 컴포넌트 */}
-          <OrderForm
-            onSubmit={handleFormSubmit}
-            initialData={selectedOrder}
-            mode={formMode}
-            isLoading={isLoading} // Form 내 로딩 상태 전달
-            onClose={() => setIsFormDialogOpen(false)}
+        {/* 수주 등록/수정 다이얼로그 */}
+        <Dialog open={isFormDialogOpen} onOpenChange={setIsFormDialogOpen}>
+          <DialogContent className="sm:max-w-[600px] lg:max-w-[800px]">
+            <DialogHeader>
+              <DialogTitle>{formMode === 'create' ? '새 수주 등록' : '수주 수정'}</DialogTitle>
+              <DialogDescription>
+                수주 정보를 입력하거나 수정합니다.
+              </DialogDescription>
+            </DialogHeader>
+            {/* OrderForm 컴포넌트 */}
+            <OrderForm
+              onSubmit={handleFormSubmit}
+              initialData={selectedOrder}
+              mode={formMode}
+              isLoading={isLoading} // Form 내 로딩 상태 전달
+              onClose={() => setIsFormDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* 수주 삭제 확인 다이얼로그 */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>정말 삭제하시겠습니까?</AlertDialogTitle>
+              <AlertDialogDescription>
+                이 수주 정보를 삭제하면 되돌릴 수 없습니다. 계속하시겠습니까?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>취소</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteOrder}>삭제</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* 파일 관리 다이얼로그 */}
+        {selectedOrder && (
+          <FileManagerDialog
+            isOpen={isFileManagerOpen}
+            onClose={() => {
+              setIsFileManagerOpen(false)
+              setSelectedOrder(null)
+              refreshOrders() // 파일 변경 후 수주 목록 새로고침
+            }}
+            orderId={selectedOrder.id}
+            orderNumber={selectedOrder.order_number}
+            projectName={selectedOrder.project_name}
           />
-        </DialogContent>
-      </Dialog>
-
-      {/* 수주 삭제 확인 다이얼로그 */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>정말 삭제하시겠습니까?</AlertDialogTitle>
-            <AlertDialogDescription>
-              이 수주 정보를 삭제하면 되돌릴 수 없습니다. 계속하시겠습니까?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteOrder}>삭제</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+        )}
+      </div>
+    </MainLayout>
   )
 }

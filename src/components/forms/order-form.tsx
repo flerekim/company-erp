@@ -57,7 +57,7 @@ const orderSchema = z.object({
   }),
   contract_date: z.string().min(1, "계약일을 선택해주세요"),
   contract_amount: z.number().min(1, "계약금액을 입력해주세요"),
-  order_type: z.enum(['new', 'change1', 'change2', 'change3']),
+  order_type: z.enum(['new', 'change1', 'change2', 'change3', 'change4', 'change5']),
   transport_type: z.enum(['onsite', 'transport'], {
     required_error: "처리방식을 선택해주세요"
   }),
@@ -83,6 +83,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [contractAmountDisplay, setContractAmountDisplay] = useState<string>('')
 
   const form = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
@@ -142,6 +143,36 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
       maximumFractionDigits: 0
     }).format(amount)
   }
+
+  // 숫자를 천단위 콤마 형식으로 포맷팅
+  const formatNumberWithCommas = (value: string) => {
+    // 숫자가 아닌 문자 제거
+    const numbersOnly = value.replace(/[^0-9]/g, '')
+    // 천단위 콤마 추가
+    return numbersOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  }
+
+  // 콤마가 포함된 문자열을 숫자로 변환
+  const parseFormattedNumber = (value: string) => {
+    return parseInt(value.replace(/,/g, '')) || 0
+  }
+
+  // 계약금액 변경 핸들러
+  const handleContractAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value
+    const formattedValue = formatNumberWithCommas(inputValue)
+    const numericValue = parseFormattedNumber(formattedValue)
+    
+    setContractAmountDisplay(formattedValue)
+    form.setValue('contract_amount', numericValue, { shouldValidate: true })
+  }
+
+  // initialData가 있을 때 계약금액 표시값 초기화
+  useEffect(() => {
+    if (initialData?.contract_amount) {
+      setContractAmountDisplay(formatNumberWithCommas(initialData.contract_amount.toString()))
+    }
+  }, [initialData])
 
   const handleSubmit = async (data: OrderFormData) => {
     setIsSubmitting(true)
@@ -206,7 +237,9 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
       new: '신규',
       change1: '1차 변경',
       change2: '2차 변경',
-      change3: '3차 변경'
+      change3: '3차 변경',
+      change4: '4차 변경',
+      change5: '5차 변경'
     }
     return labels[type]
   }
@@ -360,6 +393,8 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
                         <SelectItem value="change1">1차 변경</SelectItem>
                         <SelectItem value="change2">2차 변경</SelectItem>
                         <SelectItem value="change3">3차 변경</SelectItem>
+                        <SelectItem value="change4">4차 변경</SelectItem>
+                        <SelectItem value="change5">5차 변경</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -369,12 +404,18 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
                   <Label htmlFor="contract_amount">계약금액 (원) *</Label>
                   <Input
                     id="contract_amount"
-                    type="number"
-                    placeholder="1000000000"
-                    {...form.register('contract_amount', { valueAsNumber: true })}
+                    type="text"
+                    placeholder="0"
+                    value={contractAmountDisplay}
+                    onChange={handleContractAmountChange}
                   />
                   {form.formState.errors.contract_amount && (
                     <p className="text-sm text-red-500">{form.formState.errors.contract_amount.message}</p>
+                  )}
+                  {contractAmountDisplay && (
+                    <p className="text-sm text-gray-500">
+                      입력된 금액: {formatCurrency(parseFormattedNumber(contractAmountDisplay))}
+                    </p>
                   )}
                 </div>
               </CardContent>
@@ -393,7 +434,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>처리 방식 *</Label>
+                    <Label>정화 장소 *</Label>
                     <Select
                       value={form.watch('transport_type')}
                       onValueChange={(value) => handleFieldChange('transport_type', value as TransportType)}
@@ -402,8 +443,8 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
                         <SelectValue placeholder="선택하세요" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="onsite">부지내 처리</SelectItem>
-                        <SelectItem value="transport">반출 처리</SelectItem>
+                        <SelectItem value="onsite">부지내</SelectItem>
+                        <SelectItem value="transport">반출</SelectItem>
                       </SelectContent>
                     </Select>
                     {form.formState.errors.transport_type && (

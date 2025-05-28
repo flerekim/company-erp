@@ -10,7 +10,52 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase URL과 Anon Key가 설정되지 않았습니다. .env.local 파일을 확인하세요.')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// 브라우저 환경에서만 sessionStorage 접근
+const getSessionStorage = () => {
+  if (typeof window !== 'undefined') {
+    return {
+      getItem: (key: string) => {
+        try {
+          const value = sessionStorage.getItem(key)
+          return value ? JSON.parse(value) : null
+        } catch (error) {
+          console.error('Error reading from sessionStorage:', error)
+          return null
+        }
+      },
+      setItem: (key: string, value: any) => {
+        try {
+          sessionStorage.setItem(key, JSON.stringify(value))
+        } catch (error) {
+          console.error('Error writing to sessionStorage:', error)
+        }
+      },
+      removeItem: (key: string) => {
+        try {
+          sessionStorage.removeItem(key)
+        } catch (error) {
+          console.error('Error removing from sessionStorage:', error)
+        }
+      }
+    }
+  }
+  return {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {}
+  }
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    storageKey: 'inkwang-erp-auth',
+    storage: getSessionStorage(),
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce'
+  }
+})
 
 // 타입 안전성을 위한 Database 타입 정의 (나중에 자동 생성 예정)
 export type Database = {
@@ -36,6 +81,7 @@ export type Database = {
           secondary_manager: string | null
           created_at: string
           updated_at: string
+          attachments?: any[] | null // JSONB 배열 타입
         }
         Insert: {
           id?: string
@@ -56,6 +102,7 @@ export type Database = {
           secondary_manager?: string | null
           created_at?: string
           updated_at?: string
+          attachments?: any[] | null // JSONB 배열 타입
         }
         Update: {
           id?: string
@@ -76,6 +123,7 @@ export type Database = {
           secondary_manager?: string | null
           created_at?: string
           updated_at?: string
+          attachments?: any[] | null // JSONB 배열 타입
         }
       }
       receivables: {

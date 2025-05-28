@@ -9,6 +9,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'  
 import { Breadcrumb } from '@/components/layout/breadcrumb'
 import { Loader2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion' // Framer Motion import
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -56,8 +57,19 @@ export function MainLayout({ children }: MainLayoutProps) {
         <Breadcrumb />
         
         {/* 페이지 콘텐츠 */}
-        <main className="flex-1 overflow-auto p-6">
-          {children}
+        <main className="flex-1 overflow-auto px-2 py-4">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pathname}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6, ease: "easeInOut" }}
+              className="h-full w-full"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>
