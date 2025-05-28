@@ -50,7 +50,7 @@ export interface OrderFormData {
   order_type: OrderType
   transport_type: TransportType
   remediation_method: string
-  contamination_info: string
+  contamination_info: ContaminationItem[]
   verification_company: string
   status: OrderStatus
   progress_percentage: number
@@ -83,13 +83,29 @@ export const REMEDIATION_METHODS = [
 ] as const
 
 export const CONTAMINATION_TYPES = [
-  'TPH (총석유계탄화수소)',
-  'BTEX (벤젠, 톨루엔, 에틸벤젠, 자일렌)',
-  '중금속 (납, 카드뮴, 크롬, 구리, 니켈, 아연)',
-  'PAHs (다환방향족탄화수소)',
-  'PCBs (폴리염화비페닐)',
-  '유기염소계화합물',
-  '복합오염'
+  '카드뮴',
+  '구리',
+  '비소',
+  '수은',
+  '납',
+  '6가크롬',
+  '아연',
+  '니켈',
+  '불소',
+  '유기인화합물',
+  '폴리클로리네이티드비페닐',
+  '시안',
+  '페놀',
+  '벤젠',
+  '톨루엔',
+  '에틸벤젠',
+  '크실렌',
+  'TPH',
+  'TCE',
+  'PCE',
+  '벤조(a)피렌',
+  '1,2-디클로로에탄',
+  '다이옥신'
 ] as const
 
 export const VERIFICATION_COMPANIES = [
@@ -132,4 +148,10 @@ export interface OrderFormErrors {
   contamination_info?: string
   verification_company?: string
   primary_manager?: string
+}
+
+// 오염 항목 타입
+export interface ContaminationItem {
+  type: string; // 오염물질명
+  value: number; // 농도 (mg/kg)
 }

@@ -198,7 +198,8 @@ export function FileManagerDialog({
       if (successCount > 0) {
         toast({
           title: "업로드 완료",
-          description: `${successCount}개 파일이 성공적으로 업로드되었습니다.`
+          description: `${successCount}개 파일이 성공적으로 업로드되었습니다.`,
+          duration: 2000
         })
         setSelectedFiles([])
         await fetchFiles() // 파일 목록 새로고침
@@ -208,7 +209,8 @@ export function FileManagerDialog({
         toast({
           title: failCount === results.length ? "업로드 실패" : "일부 업로드 실패",
           description: `${failCount}개 파일 업로드에 실패했습니다.`,
-          variant: "destructive"
+          variant: "destructive",
+          duration: 2000
         })
       }
     } catch (error) {
@@ -216,7 +218,8 @@ export function FileManagerDialog({
       toast({
         title: "오류",
         description: "파일 업로드 중 오류가 발생했습니다.",
-        variant: "destructive"
+        variant: "destructive",
+        duration: 2000
       })
     } finally {
       setIsUploading(false)
@@ -231,14 +234,16 @@ export function FileManagerDialog({
       if (result.success) {
         toast({
           title: "삭제 완료",
-          description: "파일이 성공적으로 삭제되었습니다."
+          description: "파일이 성공적으로 삭제되었습니다.",
+          duration: 2000
         })
         await fetchFiles() // 파일 목록 새로고침
       } else {
         toast({
           title: "삭제 실패",
           description: result.error || "파일 삭제에 실패했습니다.",
-          variant: "destructive"
+          variant: "destructive",
+          duration: 2000
         })
       }
     } catch (error) {
@@ -246,7 +251,8 @@ export function FileManagerDialog({
       toast({
         title: "오류",
         description: "파일 삭제 중 오류가 발생했습니다.",
-        variant: "destructive"
+        variant: "destructive",
+        duration: 2000
       })
     } finally {
       setDeleteFileId(null)
@@ -269,14 +275,16 @@ export function FileManagerDialog({
       
       toast({
         title: "다운로드 시작",
-        description: `${file.file_name} 다운로드를 시작합니다.`
+        description: `${file.file_name} 다운로드를 시작합니다.`,
+        duration: 2000
       })
     } catch (error) {
       console.error('파일 다운로드 실패:', error)
       toast({
         title: "다운로드 실패",
         description: "파일 다운로드에 실패했습니다.",
-        variant: "destructive"
+        variant: "destructive",
+        duration: 2000
       })
     }
   }

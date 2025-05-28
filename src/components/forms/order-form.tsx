@@ -43,12 +43,18 @@ import {
   REMEDIATION_METHODS,
   CONTAMINATION_TYPES,
   VERIFICATION_COMPANIES,
-  MANAGERS
+  MANAGERS,
+  ContaminationItem
 } from "@/types/order"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 
 // 폼 검증 스키마
+const contaminationItemSchema = z.object({
+  type: z.string().min(1, "오염항목을 선택하세요"),
+  value: z.number().min(0, "농도를 입력하세요")
+})
+
 const orderSchema = z.object({
   project_name: z.string().min(1, "프로젝트명을 입력해주세요"),
   company_name: z.string().min(1, "고객사명을 입력해주세요"),
@@ -62,7 +68,7 @@ const orderSchema = z.object({
     required_error: "처리방식을 선택해주세요"
   }),
   remediation_method: z.string().min(1, "정화방법을 선택해주세요"),
-  contamination_info: z.string().min(1, "오염정보를 입력해주세요"),
+  contamination_info: z.array(contaminationItemSchema).min(1, "오염 정보를 1개 이상 입력하세요"),
   verification_company: z.string().min(1, "검증업체를 선택해주세요"),
   status: z.enum(['contracted', 'in_progress', 'completed', 'cancelled']),
   progress_percentage: z.number().min(0).max(100),
@@ -78,15 +84,22 @@ interface OrderFormProps {
   mode: 'create' | 'edit' // mode 속성 추가 (OrderForm에서 직접 사용)
 }
 
+// contamination_info 초기값 안전 변환 함수
+function toContaminationArray(val: any): ContaminationItem[] {
+  if (Array.isArray(val)) return val
+  return []
+}
+
 export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, mode }: OrderFormProps) {
   const { toast } = useToast()
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [contractAmountDisplay, setContractAmountDisplay] = useState<string>('')
+  const [contaminationList, setContaminationList] = useState<ContaminationItem[]>(toContaminationArray(initialData?.contamination_info))
 
   const form = useForm<OrderFormData>({
-    resolver: zodResolver(orderSchema),
+    resolver: zodResolver<OrderFormData, any, OrderFormData>(orderSchema),
     defaultValues: {
       project_name: initialData?.project_name || '',
       company_name: initialData?.company_name || '',
@@ -96,7 +109,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
       order_type: initialData?.order_type || 'new',
       transport_type: initialData?.transport_type || 'onsite',
       remediation_method: initialData?.remediation_method || '',
-      contamination_info: initialData?.contamination_info || '',
+      contamination_info: toContaminationArray(initialData?.contamination_info),
       verification_company: initialData?.verification_company || '',
       status: initialData?.status || 'contracted',
       progress_percentage: initialData?.progress_percentage || 0,
@@ -174,10 +187,32 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
     }
   }, [initialData])
 
-  const handleSubmit = async (data: OrderFormData) => {
+  // contaminationList 초기값 동기화
+  useEffect(() => {
+    setContaminationList(toContaminationArray(initialData?.contamination_info))
+  }, [initialData])
+
+  // 오염 항목 추가
+  const handleAddContamination = () => {
+    setContaminationList([...contaminationList, { type: '', value: 0 }])
+  }
+  // 오염 항목 삭제
+  const handleRemoveContamination = (idx: number) => {
+    setContaminationList(contaminationList.filter((_, i) => i !== idx))
+  }
+  // 오염 항목 변경
+  const handleContaminationChange = (idx: number, field: 'type' | 'value', value: any) => {
+    setContaminationList(contaminationList.map((item, i) =>
+      i === idx ? { ...item, [field]: field === 'value' ? Number(value) : value } : item
+    ))
+  }
+
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+    e.preventDefault()
     setIsSubmitting(true)
     try {
-      await onSubmit(data, uploadedFiles)
+      const data = form.getValues()
+      await onSubmit({ ...data, contamination_info: contaminationList }, uploadedFiles)
       toast({
         title: mode === 'edit' ? "수주 정보가 수정되었습니다." : "새 수주가 등록되었습니다.",
         description: "수주 목록에서 확인하실 수 있습니다.",
@@ -187,6 +222,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
             확인
           </ToastAction>
         ),
+        duration: 2000
       })
     } catch (error) {
       toast({
@@ -196,6 +232,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
         action: (
           <ToastAction altText="다시 시도">다시 시도</ToastAction>
         ),
+        duration: 2000
       })
     } finally {
       setIsSubmitting(false)
@@ -309,7 +346,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
           <TabsTrigger value="files">첨부 파일</TabsTrigger>
         </TabsList>
 
-        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           
           {/* 기본 정보 탭 */}
           <TabsContent value="basic" className="space-y-6">
@@ -474,18 +511,41 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="contamination_info">오염 정보 *</Label>
-                  <Textarea
-                    id="contamination_info"
-                    placeholder="예: TPH(3,915mg/kg), BTEX(215mg/kg)"
-                    rows={3}
-                    {...form.register('contamination_info')}
-                  />
-                  <div className="text-xs text-gray-500">
-                    주요 오염물질: {CONTAMINATION_TYPES.slice(0, 3).join(', ')} 등
-                  </div>
+                  <Label>오염 정보 *</Label>
+                  {contaminationList.map((item, idx) => (
+                    <div key={idx} className="flex gap-2 items-center mb-2">
+                      <Select
+                        value={item.type}
+                        onValueChange={val => handleContaminationChange(idx, 'type', val)}
+                      >
+                        <SelectTrigger className="w-56">
+                          <SelectValue placeholder="오염항목 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CONTAMINATION_TYPES.map(type => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="w-32"
+                        value={item.value || ''}
+                        onChange={e => handleContaminationChange(idx, 'value', e.target.value)}
+                        placeholder="농도"
+                      />
+                      <span className="text-sm text-gray-500">mg/kg</span>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => handleRemoveContamination(idx)}>
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" onClick={handleAddContamination}>
+                    <Plus className="w-4 h-4 mr-1" /> 오염 항목 추가
+                  </Button>
                   {form.formState.errors.contamination_info && (
-                    <p className="text-sm text-red-500">{form.formState.errors.contamination_info.message}</p>
+                    <p className="text-sm text-red-500">오염 정보를 1개 이상 입력하세요.</p>
                   )}
                 </div>
 

@@ -141,7 +141,7 @@ export function Sidebar({ }: SidebarProps) {
             "font-bold text-lg text-gray-900 transition-all duration-300 whitespace-nowrap",
             isHovered ? "opacity-100 w-auto" : "opacity-0 w-0 overflow-hidden"
           )}>
-            토양정화 ERP
+            Inkwang One
           </span>
         </div>
       </div>

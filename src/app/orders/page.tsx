@@ -49,6 +49,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
   Plus,
   Search,
   Filter,
@@ -60,7 +65,8 @@ import {
   Download,
   Upload,
   Loader2,
-  Calendar
+  Calendar,
+  Info
 } from "lucide-react"
 import { Order, OrderFormData, ClientType, OrderStatus, OrderType, OrderFile } from "@/types/order"
 import { OrderForm } from "@/components/forms/order-form"
@@ -73,6 +79,18 @@ import { MainLayout } from "@/components/layout/main-layout"
 // 파일 개수를 포함한 Order 타입
 interface OrderWithFileCount extends Order {
   fileCount: number
+}
+
+// contamination_info를 항상 배열로 변환하는 함수
+function toContaminationArray(val: any): any[] {
+  if (Array.isArray(val)) return val
+  if (typeof val === 'string') {
+    try {
+      const arr = JSON.parse(val)
+      if (Array.isArray(arr)) return arr
+    } catch {}
+  }
+  return []
 }
 
 export default function OrdersPage() {
@@ -104,16 +122,19 @@ export default function OrdersPage() {
       try {
         setIsLoading(true)
         const data = await orderService.getAll()
-        
+        // contamination_info를 항상 배열로 변환
+        const normalized = data.map((order: any) => ({
+          ...order,
+          contamination_info: toContaminationArray(order.contamination_info)
+        }))
         // 각 수주별 파일 개수 조회 (안전한 방식)
         const ordersWithFileCount = await Promise.all(
-          data.map(async (order) => {
+          normalized.map(async (order) => {
             try {
               const { count, error } = await supabase
                 .from('order_files')
                 .select('*', { count: 'exact', head: true })
                 .eq('order_id', order.id)
-              
               if (error) {
                 // 테이블 접근 오류는 로그만 남기고 0으로 처리
                 console.warn(`파일 개수 조회 실패 for order ${order.id}:`, error.message)
@@ -122,7 +143,6 @@ export default function OrdersPage() {
                   fileCount: 0
                 }
               }
-              
               return {
                 ...order,
                 fileCount: count || 0
@@ -137,17 +157,14 @@ export default function OrdersPage() {
             }
           })
         )
-        
         setOrdersList(ordersWithFileCount)
       } catch (error: any) {
         console.error('수주 데이터 조회 실패:', error?.message || error)
-        // 수주 데이터 조회 실패 시에도 빈 배열로 설정하여 UI 깨짐 방지
         setOrdersList([])
       } finally {
         setIsLoading(false)
       }
     }
-
     fetchOrders()
   }, [])
 
@@ -213,6 +230,58 @@ export default function OrdersPage() {
       cancelled: '취소'
     }
     return labels[status]
+  }
+
+  const getContaminationGroups = (contaminationInfo: any) => {
+    // contaminationInfo가 배열이면 type만 join해서 string처럼 처리
+    let infoStr = ''
+    if (Array.isArray(contaminationInfo)) {
+      infoStr = contaminationInfo.map((item: any) => item.type).join(', ')
+    } else if (typeof contaminationInfo === 'string') {
+      infoStr = contaminationInfo
+    }
+    const groups = {
+      중금속류: ['카드뮴', '구리', '비소', '수은', '납', '6가크롬', '아연', '니켈'],
+      유류: ['TPH', '벤젠', '톨루엔', '에틸벤젠', '크실렌'],
+      염소계용매: ['TCE', 'PCE', '1,2-디클로로에탄'],
+      유기염소화합물: ['폴리클로리네이티드비페닐', 'PCB', '다이옥신'],
+      기타유기물: ['유기인화합물', '페놀'],
+      기타무기물: ['불소', '시안']
+    }
+    const foundGroups: string[] = []
+    const detectedSubstances: string[] = []
+    Object.entries(groups).forEach(([groupName, substances]) => {
+      const foundInGroup = substances.filter(substance =>
+        infoStr.toLowerCase().includes(substance.toLowerCase())
+      )
+      if (foundInGroup.length > 0) {
+        foundGroups.push(groupName)
+        detectedSubstances.push(...foundInGroup)
+      }
+    })
+    // 벤조(a)피렌은 별도로 처리
+    if (infoStr.toLowerCase().includes('벤조(a)피렌')) {
+      detectedSubstances.push('벤조(a)피렌')
+    }
+    return { foundGroups, detectedSubstances, originalInfo: infoStr }
+  }
+
+  const getContaminationDisplay = (contaminationInfo: string) => {
+    const { foundGroups, detectedSubstances } = getContaminationGroups(contaminationInfo)
+    
+    if (foundGroups.length === 0) {
+      return "기타오염"
+    }
+    
+    if (foundGroups.length === 1) {
+      return foundGroups[0]
+    }
+    
+    if (foundGroups.length <= 2) {
+      return foundGroups.join(", ")
+    }
+    
+    return `${foundGroups.length}종 복합`
   }
 
   const filteredOrders = ordersList.filter(order => {
@@ -499,6 +568,8 @@ export default function OrdersPage() {
                     <TableHead className="w-[150px] text-center text-base">계약금액(V.A.T 포함)</TableHead>
                     <TableHead className="w-[100px] text-center text-base">수주유형</TableHead>
                     <TableHead className="w-[120px] text-center text-base">계약일</TableHead>
+                    <TableHead className="w-[80px] text-center text-base">진행률</TableHead>
+                    <TableHead className="w-[120px] text-center text-base">오염정보</TableHead>
                     <TableHead className="w-[100px] text-center text-base">정화 장소</TableHead>
                     <TableHead className="w-[120px] text-center text-base">파일</TableHead>
                     <TableHead className="w-[80px] text-center text-base">관리</TableHead>
@@ -507,14 +578,14 @@ export default function OrdersPage() {
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8">
+                      <TableCell colSpan={12} className="text-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                         <p className="mt-2 text-sm text-muted-foreground">데이터를 불러오는 중...</p>
                       </TableCell>
                     </TableRow>
                   ) : filteredOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8">
+                      <TableCell colSpan={12} className="text-center py-8">
                         <p className="text-muted-foreground">조회된 수주가 없습니다.</p>
                       </TableCell>
                     </TableRow>
@@ -542,6 +613,75 @@ export default function OrdersPage() {
                           {getOrderTypeLabel(order.order_type)}
                         </TableCell>
                         <TableCell className="text-center">{formatDate(order.contract_date)}</TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-12 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                style={{ width: `${order.progress_percentage}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-xs text-gray-600 min-w-[30px]">
+                              {order.progress_percentage}%
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                className="h-auto p-2 text-xs hover:bg-gray-100"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span>{getContaminationDisplay(order.contamination_info)}</span>
+                                  <Info className="h-3 w-3 text-gray-400" />
+                                </div>
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80" align="center">
+                              <div className="space-y-3">
+                                <div className="font-medium text-sm border-b pb-2">
+                                  오염정보 상세내역
+                                </div>
+                                <div className="space-y-2">
+                                  {(() => {
+                                    const { foundGroups, detectedSubstances } = getContaminationGroups(order.contamination_info)
+                                    let contaminationDetails: string | null = null
+                                    const infoArr = toContaminationArray(order.contamination_info)
+                                    if (infoArr.length > 0) {
+                                      contaminationDetails = infoArr.map((item: any) => `${item.type} (${item.value} mg/kg)`).join(', ')
+                                    }
+                                    return (
+                                      <>
+                                        {foundGroups.length > 0 && (
+                                          <div>
+                                            <div className="text-xs text-gray-500 mb-1">검출된 오염물질 그룹:</div>
+                                            <div className="flex flex-wrap gap-1">
+                                              {foundGroups.map((group, index) => (
+                                                <Badge key={index} variant="secondary" className="text-xs">
+                                                  {group}
+                                                </Badge>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {contaminationDetails && (
+                                          <div>
+                                            <div className="text-xs text-gray-500 mb-1">구체적 물질 및 농도:</div>
+                                            <div className="text-xs text-gray-700">
+                                              {contaminationDetails}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </>
+                                    )
+                                  })()}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </TableCell>
                         <TableCell className="text-center">
                           <Badge className={getTransportTypeBadge(order.transport_type)}>
                             {getTransportTypeLabel(order.transport_type)}
