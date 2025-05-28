@@ -66,7 +66,8 @@ import {
   Upload,
   Loader2,
   Calendar,
-  Info
+  Info,
+  Printer
 } from "lucide-react"
 import { Order, OrderFormData, ClientType, OrderStatus, OrderType, OrderFile } from "@/types/order"
 import { OrderForm } from "@/components/forms/order-form"
@@ -75,6 +76,7 @@ import { FileManagerDialog } from "@/components/file-manager/file-manager-dialog
 import { supabase } from "@/lib/supabase/client"
 import { FileUploadService } from "@/lib/supabase/file-upload"
 import { MainLayout } from "@/components/layout/main-layout"
+import { utils as XLSXUtils, writeFile as XLSXWriteFile } from "xlsx"
 
 // 파일 개수를 포함한 Order 타입
 interface OrderWithFileCount extends Order {
@@ -195,9 +197,9 @@ export default function OrdersPage() {
       contracted: 'bg-blue-100 text-blue-800',
       in_progress: 'bg-yellow-100 text-yellow-800',
       completed: 'bg-green-100 text-green-800',
-      cancelled: 'bg-red-100 text-red-800'
-    }
-    return statusColors[status]
+      bidding: 'bg-gray-200 text-gray-700',
+    } as const
+    return statusColors[status as keyof typeof statusColors] ?? 'bg-gray-200 text-gray-700'
   }
 
   const getTransportTypeBadge = (type: string) => {
@@ -227,9 +229,9 @@ export default function OrdersPage() {
       contracted: '계약',
       in_progress: '진행중',
       completed: '완료',
-      cancelled: '취소'
-    }
-    return labels[status]
+      bidding: '입찰예정',
+    } as const
+    return labels[status as keyof typeof labels] ?? status
   }
 
   const getContaminationGroups = (contaminationInfo: any) => {
@@ -462,98 +464,131 @@ export default function OrdersPage() {
     }
   }
 
+  // 엑셀 내보내기 함수 추가 (xlsx 라이브러리 필요)
+  const handleExportExcel = () => {
+    // 테이블 데이터 엑셀로 변환
+    const exportData = filteredOrders.map(order => ({
+      상태: getStatusLabel(order.status),
+      고객사유형: order.client_type === 'government' ? '관수' : '민수',
+      프로젝트명: order.project_name,
+      거래처: order.company_name,
+      계약금액: order.contract_amount,
+      수주유형: getOrderTypeLabel(order.order_type),
+      계약일: formatDate(order.contract_date),
+      진행률: order.progress_percentage + '%',
+      오염정보: getContaminationDisplay(order.contamination_info),
+      정화장소: getTransportTypeLabel(order.transport_type),
+      파일: order.fileCount
+    }))
+    const ws = XLSXUtils.json_to_sheet(exportData)
+    const wb = XLSXUtils.book_new()
+    XLSXUtils.book_append_sheet(wb, ws, "수주목록")
+    XLSXWriteFile(wb, "수주목록.xlsx")
+  }
+
   return (
     <MainLayout>
       <div className="py-6 px-10">
         <Card>
           <CardHeader className="pb-4">
-            <div className="flex justify-between items-center">
-              <div>
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              {/* 타이틀/설명 왼쪽 고정 */}
+              <div className="flex-shrink-0 min-w-[220px]">
                 <CardTitle className="text-4xl font-bold">수주 관리</CardTitle>
-                <CardDescription className="text-base mt-1">수주 현황을 조회하고 관리합니다.</CardDescription>
               </div>
-              <Button onClick={handleCreateOrder}>
-                <Plus className="mr-2 h-4 w-4" />
-                새 수주 등록
-              </Button>
+              {/* 필터/버튼 한 줄로 오른쪽 정렬, 넘치면 스크롤 */}
+              <div className="flex-1">
+                <div className="flex flex-nowrap gap-3 items-end justify-end overflow-x-auto py-1">
+                  {/* 검색 */}
+                  <div className="relative min-w-[200px]">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="프로젝트명 또는 거래처명"
+                      value={filters.searchTerm}
+                      onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                      className="pl-8 h-10"
+                    />
+                  </div>
+                  {/* 고객사 유형 */}
+                  <Select
+                    value={filters.clientType}
+                    onValueChange={(value) => setFilters(prev => ({ ...prev, clientType: value as ClientType | "all" }))}
+                  >
+                    <SelectTrigger className="h-10 min-w-[150px]">
+                      <SelectValue placeholder="고객사 유형" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">고객사 유형: 전체</SelectItem>
+                      <SelectItem value="government">관수</SelectItem>
+                      <SelectItem value="private">민수</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {/* 상태 */}
+                  <Select
+                    value={filters.status}
+                    onValueChange={(value) => setFilters(prev => ({ ...prev, status: value as OrderStatus | "all" }))}
+                  >
+                    <SelectTrigger className="h-10 min-w-[150px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">상태: 전체</SelectItem>
+                      <SelectItem value="cancelled">취소</SelectItem>
+                      <SelectItem value="contracted">계약</SelectItem>
+                      <SelectItem value="in_progress">진행중</SelectItem>
+                      <SelectItem value="completed">완료</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {/* 계약일 범위 */}
+                  <Input
+                    type="date"
+                    value={filters.dateRange.startDate}
+                    onChange={(e) => setFilters(prev => ({
+                      ...prev,
+                      dateRange: { ...prev.dateRange, startDate: e.target.value }
+                    }))}
+                    className="h-10 min-w-[100px]"
+                  />
+                  <Input
+                    type="date"
+                    value={filters.dateRange.endDate}
+                    onChange={(e) => setFilters(prev => ({
+                      ...prev,
+                      dateRange: { ...prev.dateRange, endDate: e.target.value }
+                    }))}
+                    className="h-10 min-w-[100px]"
+                  />
+                  {/* 엑셀 내보내기, 화면인쇄, 새 수주 등록 */}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border border-gray-300"
+                    title="엑셀 내보내기"
+                    onClick={handleExportExcel}
+                  >
+                    <Download className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border border-gray-300"
+                    title="화면 인쇄"
+                    onClick={() => window.print()}
+                  >
+                    <Printer className="h-5 w-5" />
+                  </Button>
+                  <Button onClick={handleCreateOrder} className="h-10 min-w-[140px]">
+                    <Plus className="mr-2 h-4 w-4" />
+                    새 수주 등록
+                  </Button>
+                </div>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            {/* 통합된 필터 섹션 */}
-            <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-6">
-              <div className="max-w-6xl mx-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">검색</label>
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="프로젝트명 또는 거래처명"
-                        value={filters.searchTerm}
-                        onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
-                        className="pl-8 h-10"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">고객사 유형</label>
-                    <Select
-                      value={filters.clientType}
-                      onValueChange={(value) => setFilters(prev => ({ ...prev, clientType: value as ClientType | "all" }))}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">전체</SelectItem>
-                        <SelectItem value="government">관수</SelectItem>
-                        <SelectItem value="private">민수</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">상태</label>
-                    <Select
-                      value={filters.status}
-                      onValueChange={(value) => setFilters(prev => ({ ...prev, status: value as OrderStatus | "all" }))}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">전체</SelectItem>
-                        <SelectItem value="contracted">계약</SelectItem>
-                        <SelectItem value="in_progress">진행중</SelectItem>
-                        <SelectItem value="completed">완료</SelectItem>
-                        <SelectItem value="cancelled">취소</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">계약일 범위</label>
-                    <div className="flex gap-4">
-                      <Input
-                        type="date"
-                        value={filters.dateRange.startDate}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          dateRange: { ...prev.dateRange, startDate: e.target.value }
-                        }))}
-                        className="h-10 min-w-[140px] flex-1"
-                      />
-                      <Input
-                        type="date"
-                        value={filters.dateRange.endDate}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          dateRange: { ...prev.dateRange, endDate: e.target.value }
-                        }))}
-                        className="h-10 min-w-[140px] flex-1"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {/* 기존 필터 영역 → 대시보드 자리 */}
+            <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-6 flex items-center justify-center min-h-[80px] text-2xl text-gray-400">
+              향후 대시보드 삽입
             </div>
 
             {/* 개선된 테이블 레이아웃 */}

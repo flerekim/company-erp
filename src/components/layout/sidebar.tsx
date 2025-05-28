@@ -29,6 +29,7 @@ export function Sidebar({ }: SidebarProps) {
   const { profile } = useAuth()
   const [isHovered, setIsHovered] = useState(false)
   const [delayTimer, setDelayTimer] = useState<NodeJS.Timeout | null>(null)
+  const [isIkGroupOpen, setIsIkGroupOpen] = useState(false)
 
   // 로그인하지 않은 경우 렌더링하지 않음
   if (!profile) {
@@ -82,6 +83,11 @@ export function Sidebar({ }: SidebarProps) {
   const menuItems = profile.role === 'admin' 
     ? [...baseMenuItems, ...adminMenuItems]
     : baseMenuItems
+
+  // 홈 메뉴만 따로 분리
+  const homeMenu = baseMenuItems[0]
+  // 인광이에스 하위 메뉴
+  const ikGroupMenus = baseMenuItems.slice(1)
 
   // 사용자 이름의 첫 글자 추출 (아바타용)
   const getInitials = (name: string) => {
@@ -148,44 +154,97 @@ export function Sidebar({ }: SidebarProps) {
 
       {/* 네비게이션 메뉴 */}
       <nav className="flex-1 px-2 py-4 space-y-1">
-        {/* 기본 메뉴 */}
-        {baseMenuItems.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200 group relative",
-                isActive 
-                  ? "bg-blue-50 text-blue-700 shadow-sm" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-              )}
-            >
-              {/* 아이콘은 항상 같은 위치에 고정 */}
-              <item.icon className={cn(
-                "h-5 w-5 flex-shrink-0",
-                isActive && "text-blue-700"
-              )} />
-              
-              {/* 텍스트는 아이콘 오른쪽에 절대 위치로 배치 */}
-              <span className={cn(
-                "absolute left-12 transition-all duration-300 whitespace-nowrap",
-                isHovered ? "opacity-100 visible" : "opacity-0 invisible"
-              )}>
-                {item.title}
-              </span>
-              
-              {/* 활성 상태 표시 바 */}
-              {isActive && (
-                <div className={cn(
-                  "absolute right-0 top-0 bottom-0 w-1 bg-blue-700 rounded-l-md",
-                  "transition-all duration-300"
-                )} />
-              )}
-            </Link>
-          )
-        })}
+        {/* 홈 메뉴 */}
+        <Link
+          key={homeMenu.href}
+          href={homeMenu.href}
+          className={cn(
+            "flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200 group relative",
+            pathname === homeMenu.href ? "bg-blue-50 text-blue-700 shadow-sm" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          )}
+        >
+          <homeMenu.icon className={cn(
+            "h-5 w-5 flex-shrink-0",
+            pathname === homeMenu.href && "text-blue-700"
+          )} />
+          <span className={cn(
+            "absolute left-12 transition-all duration-300 whitespace-nowrap",
+            isHovered ? "opacity-100 visible" : "opacity-0 invisible"
+          )}>
+            {homeMenu.title}
+          </span>
+          {pathname === homeMenu.href && (
+            <div className={cn(
+              "absolute right-0 top-0 bottom-0 w-1 bg-blue-700 rounded-l-md",
+              "transition-all duration-300"
+            )} />
+          )}
+        </Link>
+
+        {/* 인광이에스 그룹 */}
+        <div>
+          <button
+            type="button"
+            className={cn(
+              "flex items-center w-full px-3 py-3 text-sm font-semibold rounded-lg transition-all duration-200 group relative",
+              isIkGroupOpen ? "bg-gray-100 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            )}
+            onClick={() => setIsIkGroupOpen((prev) => !prev)}
+          >
+            <LayoutDashboard className="h-5 w-5 flex-shrink-0 mr-2" />
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap",
+              isHovered ? "opacity-100 visible" : "opacity-0 invisible"
+            )}>
+              인광이에스
+            </span>
+            <span className={cn(
+              "ml-auto transition-transform",
+              isIkGroupOpen ? "rotate-90" : "rotate-0",
+              isHovered ? "opacity-100" : "opacity-0"
+            )}>
+              ▶
+            </span>
+          </button>
+          {/* 하위 메뉴 */}
+          {isIkGroupOpen && isHovered && (
+            <div className="pl-6 space-y-1">
+              {ikGroupMenus.map((item) => {
+                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setIsIkGroupOpen(false)}
+                    className={cn(
+                      "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 group relative",
+                      isActive 
+                        ? "bg-blue-50 text-blue-700 shadow-sm" 
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    )}
+                  >
+                    <item.icon className={cn(
+                      "h-5 w-5 flex-shrink-0",
+                      isActive && "text-blue-700"
+                    )} />
+                    <span className={cn(
+                      "absolute left-12 transition-all duration-300 whitespace-nowrap",
+                      isHovered ? "opacity-100 visible" : "opacity-0 invisible"
+                    )}>
+                      {item.title}
+                    </span>
+                    {isActive && (
+                      <div className={cn(
+                        "absolute right-0 top-0 bottom-0 w-1 bg-blue-700 rounded-l-md",
+                        "transition-all duration-300"
+                      )} />
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         {/* 관리자 메뉴 구분선 및 메뉴 */}
         {profile.role === 'admin' && adminMenuItems.length > 0 && (
