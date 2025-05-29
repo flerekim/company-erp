@@ -10,11 +10,28 @@ export const orderService = {
   async getAll() {
     const { data, error } = await supabase
       .from('orders')
-      .select('*')
+      .select(`
+        *,
+        projects ( status )
+      `)
       .order('created_at', { ascending: false })
     
-    if (error) throw error
-    return data
+    if (error) {
+      console.error("Error fetching orders with project status:", error);
+      throw error;
+    }
+
+    // data 각 항목에 projects: { status } 객체가 포함됨.
+    // 이를 order.project_status로 매핑
+    const ordersWithProjectStatus = data?.map(order => {
+      const { projects, ...restOfOrder } = order as any; // 타입 단언 사용
+      return {
+        ...restOfOrder,
+        project_status: projects?.status || null, // projects 객체가 없거나 status가 없을 경우 null
+      };
+    });
+
+    return ordersWithProjectStatus;
   },
 
   // 수주 ID로 조회
@@ -31,6 +48,24 @@ export const orderService = {
 
   // 수주 생성
   async create(orderData: any) {
+    // project_id가 있으면 project_name을 조회해서 설정
+    if (orderData.project_id) {
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('project_name')
+        .eq('id', orderData.project_id)
+        .single()
+      
+      if (projectError) {
+        console.error("Error fetching project for project_name:", projectError);
+        throw new Error(`프로젝트 정보를 찾을 수 없습니다: ${projectError.message}`);
+      }
+      
+      if (project) {
+        orderData.project_name = project.project_name;
+      }
+    }
+
     const { data, error } = await supabase
       .from('orders')
       .insert(orderData)
@@ -43,6 +78,24 @@ export const orderService = {
 
   // 수주 수정
   async update(id: string, orderData: any) {
+    // project_id가 있으면 project_name을 조회해서 설정
+    if (orderData.project_id) {
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('project_name')
+        .eq('id', orderData.project_id)
+        .single()
+      
+      if (projectError) {
+        console.error("Error fetching project for project_name:", projectError);
+        throw new Error(`프로젝트 정보를 찾을 수 없습니다: ${projectError.message}`);
+      }
+      
+      if (project) {
+        orderData.project_name = project.project_name;
+      }
+    }
+
     const { data, error } = await supabase
       .from('orders')
       .update(orderData)

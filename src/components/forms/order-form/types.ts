@@ -8,6 +8,7 @@ export const contaminationItemSchema = z.object({
 
 // 수주 폼 스키마
 export const orderSchema = z.object({
+  project_id: z.string().min(1, "프로젝트를 선택해주세요"),
   project_name: z.string().min(1, "프로젝트명을 입력해주세요"),
   company_name: z.string().min(1, "고객사명을 입력해주세요"),
   client_type: z.enum(['government', 'private'], {
@@ -30,6 +31,7 @@ export const orderSchema = z.object({
 
 // 폼 기본값
 export const getDefaultValues = (initialData: any) => ({
+  project_id: initialData?.project_id || '',
   project_name: initialData?.project_name || '',
   company_name: initialData?.company_name || '',
   client_type: initialData?.client_type || 'private',

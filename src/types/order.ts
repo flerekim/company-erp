@@ -1,16 +1,19 @@
 // src/types/orders.ts
 // 수주 관리 시스템 전용 타입 정의
+import { ProjectStatus } from './project'; // ProjectStatus import 추가
 
 export type ClientType = 'government' | 'private'
 export type OrderType = 'new' | 'change1' | 'change2' | 'change3' | 'change4' | 'change5'
 export type TransportType = 'onsite' | 'transport'
-export type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'bidding'
+export type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'bidding' // 계약별 세부 상태
 
 // 수주 메인 인터페이스
 export interface Order {
   id: string
+  project_id: string;           // FK, Project 테이블의 ID 참조 (NEW)
   order_number: string           // 수주번호: "ORD-2024-001"
-  project_name: string           // 프로젝트명
+  project_name: string           // 프로젝트명 (UI 표시용, 실제 그룹핑은 project_id로)
+  project_status?: ProjectStatus; // 프로젝트의 대표 상태 (NEW, projects 테이블에서 JOIN)
   company_name: string           // 고객사명
   client_type: ClientType        // 관수/민수 구분
   
@@ -23,11 +26,11 @@ export interface Order {
   // 토양정화 전문 정보
   transport_type: TransportType  // 부지내/반출 구분
   remediation_method: string     // 정화방법
-  contamination_info: string     // 오염정보
+  contamination_info: string | ContaminationItem[] // DB는 string, 사용 시 ContaminationItem[]
   verification_company: string   // 검증업체
   
   // 프로젝트 상태
-  status: OrderStatus            // 프로젝트 상태
+  status: OrderStatus            // 계약별 세부 진행 상태
   progress_percentage: number    // 진행률 (0-100)
   
   // 담당자 정보
@@ -42,7 +45,8 @@ export interface Order {
 
 // 수주 폼 데이터 인터페이스
 export interface OrderFormData {
-  project_name: string
+  project_id: string;          // 프로젝트 ID (필수)
+  project_name: string;        // 프로젝트명
   company_name: string
   client_type: ClientType
   contract_date: string
@@ -52,7 +56,7 @@ export interface OrderFormData {
   remediation_method: string
   contamination_info: ContaminationItem[]
   verification_company: string
-  status: OrderStatus
+  status: OrderStatus            // 계약별 세부 진행 상태
   progress_percentage: number
   primary_manager: string
   secondary_manager?: string
@@ -157,9 +161,11 @@ export interface ContaminationItem {
 }
 
 // 파일 개수 및 요약 보기용 추가 필드를 포함하는 Order 확장 인터페이스
-export interface OrderWithFileCount extends Omit<Order, 'order_type'> {
+export interface OrderWithFileCount extends Omit<Order, 'order_type' | 'contamination_info'> {
   fileCount: number;
   change_orders?: OrderWithFileCount[]; 
-  all_orders?: OrderWithFileCount[];
+  all_orders?: OrderWithFileCount[]; // project_id로 묶인 모든 계약들
   order_type: OrderType | 'new+change'; 
+  contamination_info: ContaminationItem[] | string;
+  project_status?: ProjectStatus; 
 }

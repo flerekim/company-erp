@@ -120,6 +120,11 @@ export const getStatusLabel = (status: OrderStatus | null | undefined): string =
   return labels[status] ?? status;
 };
 
+export const getClientTypeLabel = (type: ClientType | null | undefined): string => {
+  if (!type) return "정보 없음";
+  return type === 'government' ? '관수' : '민수';
+};
+
 interface ContaminationGroupResult {
   foundGroups: string[];
   detectedSubstances: string[];

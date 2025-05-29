@@ -54,7 +54,7 @@ export function Sidebar({ }: SidebarProps) {
     },
     {
       title: "실적 관리",
-      href: "/performance",
+      href: "/achievements",
       icon: BarChart3,
     },
     {
@@ -210,37 +210,37 @@ export function Sidebar({ }: SidebarProps) {
           {isIkGroupOpen && isHovered && (
             <div className="pl-6 space-y-1">
               {ikGroupMenus.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
+          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
                       "flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 group relative",
-                      isActive 
-                        ? "bg-blue-50 text-blue-700 shadow-sm" 
-                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                    )}
-                  >
-                    <item.icon className={cn(
-                      "h-5 w-5 flex-shrink-0",
-                      isActive && "text-blue-700"
-                    )} />
-                    <span className={cn(
-                      "absolute left-12 transition-all duration-300 whitespace-nowrap",
-                      isHovered ? "opacity-100 visible" : "opacity-0 invisible"
-                    )}>
-                      {item.title}
-                    </span>
-                    {isActive && (
-                      <div className={cn(
-                        "absolute right-0 top-0 bottom-0 w-1 bg-blue-700 rounded-l-md",
-                        "transition-all duration-300"
-                      )} />
-                    )}
-                  </Link>
-                )
-              })}
+                isActive 
+                  ? "bg-blue-50 text-blue-700 shadow-sm" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              )}
+            >
+              <item.icon className={cn(
+                "h-5 w-5 flex-shrink-0",
+                isActive && "text-blue-700"
+              )} />
+              <span className={cn(
+                "absolute left-12 transition-all duration-300 whitespace-nowrap",
+                isHovered ? "opacity-100 visible" : "opacity-0 invisible"
+              )}>
+                {item.title}
+              </span>
+              {isActive && (
+                <div className={cn(
+                  "absolute right-0 top-0 bottom-0 w-1 bg-blue-700 rounded-l-md",
+                  "transition-all duration-300"
+                )} />
+              )}
+            </Link>
+          )
+        })}
             </div>
           )}
         </div>

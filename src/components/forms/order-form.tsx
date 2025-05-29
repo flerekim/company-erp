@@ -12,14 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { DollarSign, FileText } from "lucide-react"
 import { Order, OrderFormData, ContaminationItem, OrderWithFileCount } from "@/types/order"
-import { useToast } from "@/components/ui/use-toast"
-import { ToastAction } from "@/components/ui/toast"
 
 // 분리된 컴포넌트들
 import { BasicInfoTab } from "./order-form/basic-info-tab"
 import { TechnicalInfoTab } from "./order-form/technical-info-tab"
 import { ManagementInfoTab } from "./order-form/management-info-tab"
 import { FilesTab } from "./order-form/files-tab"
+import { ProjectCreationDialog } from "./order-form/project-creation-dialog"
 
 // 분리된 유틸리티와 스키마
 import { orderSchema, getDefaultValues } from "./order-form/types"
@@ -34,26 +33,15 @@ interface OrderFormProps {
 }
 
 export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, mode }: OrderFormProps) {
-  const { toast } = useToast()
+  const [contractAmountDisplay, setContractAmountDisplay] = useState('')
+  const [contaminationList, setContaminationList] = useState<ContaminationItem[]>([])
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [contractAmountDisplay, setContractAmountDisplay] = useState<string>('')
-  const [contaminationList, setContaminationList] = useState<ContaminationItem[]>(toContaminationArray(initialData?.contamination_info))
-  const [formMode, setFormMode] = useState<'new' | 'change'>('new')
-
-  // mode prop이 바뀔 때 formMode 초기화 (order_type 기본값 설정용)
-  useEffect(() => {
-    if (mode === 'create') {
-      setFormMode('new');
-      // form.reset(getDefaultValues(null)); // 이관 또는 제거 (아래 initialData useEffect에서 처리)
-      // setContractAmountDisplay('');
-      // setContaminationList([]); 
-    } else if (mode === 'edit') {
-      // 수정 모드일 때는 order_type을 initialData에서 가져오거나, 없으면 기본값 유지
-      // form.reset은 initialData useEffect에서 처리
-      setFormMode(initialData?.order_type?.startsWith('change') ? 'change' : 'new'); 
-    }
-  }, [mode, initialData]); // initialData도 의존성에 추가
+  const [formMode, setFormMode] = useState<'new' | 'change' | null>(null)
+  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null)
+  const [createdProjectName, setCreatedProjectName] = useState<string>('')
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false)
+  const [isCreatingProject, setIsCreatingProject] = useState(false)
 
   const form = useForm<OrderFormData>({
     resolver: zodResolver<OrderFormData, any, OrderFormData>(orderSchema),
@@ -63,25 +51,62 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
 
   // 모든 필수 필드 감시
   const watchedFields = {
-    project_name: form.watch('project_name'),
+    project_id: form.watch('project_id'),
     company_name: form.watch('company_name'),
     contract_amount: form.watch('contract_amount'),
     remediation_method: form.watch('remediation_method'),
-    contamination_info: form.watch('contamination_info'),
     verification_company: form.watch('verification_company'),
     primary_manager: form.watch('primary_manager')
   }
 
-  // 폼 유효성 검사 상태 확인
+  // 폼 유효성 검사 상태 확인 (오염 정보 포함)
   const isFormValid = 
-    watchedFields.project_name && 
+    watchedFields.project_id && 
     watchedFields.company_name && 
     watchedFields.contract_amount > 0 &&
     watchedFields.remediation_method &&
-    watchedFields.contamination_info &&
     watchedFields.verification_company &&
     watchedFields.primary_manager &&
+    contaminationList.length > 0 &&
+    contaminationList.every(item => item.type && item.value > 0) &&
     !Object.keys(form.formState.errors).length
+
+  // formMode 변경 시 order_type 동기화
+  useEffect(() => {
+    if (formMode === 'new') {
+      form.setValue('order_type', 'new', { shouldValidate: true })
+    } else {
+      // 변경 모드일 때는 기존 값이 있으면 유지, 없으면 change1로 설정
+      const currentOrderType = form.getValues('order_type')
+      if (currentOrderType === 'new') {
+        form.setValue('order_type', 'change1', { shouldValidate: true })
+      }
+    }
+  }, [formMode, form])
+
+  // 초기값 설정
+  useEffect(() => {
+    if (mode === 'edit' && initialData) {
+      // 편집 모드에서는 기존 데이터로 초기화
+      setFormMode('change');
+      setContractAmountDisplay(formatCurrency(initialData.contract_amount));
+      setContaminationList(toContaminationArray(initialData.contamination_info));
+      
+      // 폼 필드들 설정
+      const defaults = getDefaultValues(initialData);
+      form.reset(defaults);
+    } else {
+      // 생성 모드에서는 초기값으로 리셋 (모드는 null로 시작)
+      setFormMode(null);
+      setContractAmountDisplay('');
+      setContaminationList([]);
+      setCreatedProjectId(null);
+      setCreatedProjectName('');
+      
+      const defaults = getDefaultValues(null);
+      form.reset(defaults);
+    }
+  }, [mode, initialData, form]);
 
   // 필드 값 변경 핸들러
   const handleFieldChange = (field: keyof OrderFormData, value: any) => {
@@ -101,7 +126,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
   // 오염 항목 관리 핸들러들
   const handleAddContamination = () => {
     setContaminationList([...contaminationList, { type: '', value: 0 }])
-  }
+    }
 
   const handleRemoveContamination = (idx: number) => {
     setContaminationList(contaminationList.filter((_, i) => i !== idx))
@@ -111,7 +136,7 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
     setContaminationList(contaminationList.map((item, i) =>
       i === idx ? { ...item, [field]: field === 'value' ? Number(value) : value } : item
     ))
-  }
+    }
 
   // 파일 관리 핸들러들
   const handleFileUpload = (files: File[]) => {
@@ -122,59 +147,94 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
     setUploadedFiles(prev => prev.filter((_, i) => i !== index))
   }
 
-  // 폼 제출 핸들러
+  // formMode 변경 핸들러
+  const handleFormModeChange = async (newMode: 'new' | 'change') => {
+    if (newMode === 'new') {
+      // 신규 선택 시 프로젝트 생성 다이얼로그 표시
+      setIsProjectDialogOpen(true)
+    } else {
+      // 변경 모드는 바로 설정
+      setFormMode(newMode);
+    }
+  }
+
+  // 프로젝트 생성 핸들러
+  const handleProjectCreate = async (projectName: string) => {
+    console.log("=== 프로젝트 생성 시작 ===", projectName);
+    setIsCreatingProject(true)
+    try {
+      console.log("ProjectService import 시작...");
+      const { ProjectService } = await import('@/lib/supabase/project-service');
+      const { supabase } = await import('@/lib/supabase/client');
+      console.log("Import 완료, ProjectService 인스턴스 생성...");
+      
+      const projectService = new ProjectService(supabase);
+      console.log("프로젝트 데이터:", {
+        project_name: projectName.trim(),
+        status: 'planning',
+        client_company_name: '',
+      });
+      
+      console.log("프로젝트 생성 API 호출...");
+      const { data: newProject, error: projectError } = await projectService.createProject({
+        project_name: projectName.trim(),
+        status: 'planning',
+        client_company_name: '', // 빈 문자열로 설정
+      });
+
+      console.log("API 응답:", { data: newProject, error: projectError });
+
+      if (projectError || !newProject) {
+        console.error("프로젝트 생성 실패:", projectError);
+        throw new Error(projectError?.message || "프로젝트 생성 실패");
+      }
+
+      console.log("프로젝트 생성 성공:", newProject);
+      // 프로젝트 생성 성공
+      setCreatedProjectId(newProject.id);
+      setCreatedProjectName(projectName.trim());
+      form.setValue('project_id', newProject.id, { shouldValidate: true });
+      // 거래처명은 자동 입력하지 않음 (사용자가 직접 입력해야 함)
+      setFormMode('new');
+      setIsProjectDialogOpen(false);
+      
+      console.log("프로젝트 생성 완료 처리 완료");
+      // 성공 알림은 토스트로 처리 (상위 컴포넌트에서)
+    } catch (error: any) {
+      // 에러 처리
+      console.error('프로젝트 생성 에러:', error);
+      console.error('에러 상세:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      throw error; // 다이얼로그에서 처리하도록
+    } finally {
+      console.log("프로젝트 생성 finally 실행");
+      setIsCreatingProject(false);
+    }
+  }
+
+  // 폼 제출 핸들러 - 중복 토스트 제거
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault()
+    
+    if (!isFormValid) {
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const data = form.getValues()
       await onSubmit({ ...data, contamination_info: contaminationList }, uploadedFiles)
-      toast({
-        title: mode === 'edit' ? "수주 정보가 수정되었습니다." : "새 수주가 등록되었습니다.",
-        description: "수주 목록에서 확인하실 수 있습니다.",
-        variant: "success",
-        action: (
-          <ToastAction altText="확인" className="text-white hover:bg-blue-700">
-            확인
-          </ToastAction>
-        ),
-        duration: 2000
-      })
+      // 토스트는 상위 컴포넌트에서 처리하므로 여기서는 제거
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "오류가 발생했습니다.",
-        description: "다시 시도해주세요.",
-        action: (
-          <ToastAction altText="다시 시도">다시 시도</ToastAction>
-        ),
-        duration: 2000
-      })
+      console.error('Form submission error:', error)
+      // 에러도 상위 컴포넌트에서 처리
     } finally {
       setIsSubmitting(false)
     }
   }
-
-  // initialData가 변경될 때 폼 전체를 리셋하고 관련 상태 업데이트
-  useEffect(() => {
-    if (initialData) {
-      form.reset(getDefaultValues(initialData));
-      setContractAmountDisplay(initialData.contract_amount ? formatNumberWithCommas(initialData.contract_amount.toString()) : '');
-      setContaminationList(toContaminationArray(initialData.contamination_info));
-      // 수정 모드일 때, initialData의 order_type을 보고 formMode (신규/변경 탭) 설정
-      if (mode === 'edit') {
-        setFormMode(initialData.order_type?.startsWith('change') ? 'change' : 'new');
-      }
-    } else {
-      // 생성 모드 또는 initialData가 없는 경우
-      form.reset(getDefaultValues(null)); 
-      setContractAmountDisplay('');
-      setContaminationList([]);
-      if (mode === 'create') {
-        setFormMode('new'); // 생성 모드면 항상 '신규' 탭
-      }
-    }
-  }, [initialData, form, mode]); // mode를 의존성 배열에 추가
 
   return (
     <div className="space-y-6">
@@ -190,9 +250,41 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
           </CardDescription>
           {/* 신규/변경 토글 버튼 */}
           <div className="flex gap-2 mt-4">
-            <Button variant={formMode === 'new' ? 'default' : 'outline'} onClick={() => setFormMode('new')}>신규</Button>
-            <Button variant={formMode === 'change' ? 'default' : 'outline'} onClick={() => setFormMode('change')}>변경</Button>
+            <Button 
+              type="button"
+              variant={formMode === 'new' ? 'default' : 'outline'} 
+              onClick={() => handleFormModeChange('new')}
+              disabled={isSubmitting || isCreatingProject}
+            >
+              {isCreatingProject ? '처리 중...' : '신규'}
+            </Button>
+            <Button 
+              type="button"
+              variant={formMode === 'change' ? 'default' : 'outline'} 
+              onClick={() => handleFormModeChange('change')}
+              disabled={isSubmitting || isCreatingProject || formMode === 'new'}
+            >
+              변경
+            </Button>
           </div>
+
+          {/* 신규 모드 선택 후 안내 메시지 */}
+          {formMode === 'new' && (
+            <div className="text-center p-4 bg-green-50 rounded-lg text-green-800">
+              <p className="text-sm">
+                ✓ '{createdProjectName}' 프로젝트가 생성되었습니다. 이제 수주 정보를 입력하세요.
+              </p>
+            </div>
+          )}
+
+          {/* 모드가 선택되지 않았을 때 안내 메시지 */}
+          {formMode === null && (
+            <div className="text-center p-8 text-gray-500">
+              <p className="text-lg mb-2">수주 유형을 선택해주세요</p>
+              <p className="text-sm">신규: 새 프로젝트를 생성하고 수주를 등록합니다</p>
+              <p className="text-sm">변경: 기존 프로젝트에 변경계약을 등록합니다</p>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {initialData && (
@@ -237,50 +329,53 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
         </CardContent>
       </Card>
 
-      {/* 탭 폼 */}
+      {/* 탭 폼 - 모드가 선택되었을 때만 표시 */}
+      {formMode !== null && (
       <Tabs defaultValue="basic" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-4 bg-gray-100 p-1 rounded-lg">
           <TabsTrigger value="basic">기본 정보</TabsTrigger>
           <TabsTrigger value="technical">기술 정보</TabsTrigger>
           <TabsTrigger value="management">관리 정보</TabsTrigger>
           <TabsTrigger value="files">첨부 파일</TabsTrigger>
         </TabsList>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
           <TabsContent value="basic" className="space-y-6">
-            <BasicInfoTab
-              form={form}
-              formMode={formMode}
-              contractAmountDisplay={contractAmountDisplay}
-              onContractAmountChange={handleContractAmountChange}
-              onFieldChange={handleFieldChange}
-            />
+              <BasicInfoTab
+                form={form}
+                formMode={formMode}
+                contractAmountDisplay={contractAmountDisplay}
+                onContractAmountChange={handleContractAmountChange}
+                onFieldChange={handleFieldChange}
+                createdProjectId={createdProjectId}
+                createdProjectName={createdProjectName}
+              />
           </TabsContent>
 
           <TabsContent value="technical" className="space-y-6">
-            <TechnicalInfoTab
-              form={form}
-              contaminationList={contaminationList}
-              onFieldChange={handleFieldChange}
-              onAddContamination={handleAddContamination}
-              onRemoveContamination={handleRemoveContamination}
-              onContaminationChange={handleContaminationChange}
-            />
+              <TechnicalInfoTab
+                form={form}
+                contaminationList={contaminationList}
+                onFieldChange={handleFieldChange}
+                onAddContamination={handleAddContamination}
+                onRemoveContamination={handleRemoveContamination}
+                onContaminationChange={handleContaminationChange}
+              />
           </TabsContent>
 
           <TabsContent value="management" className="space-y-6">
-            <ManagementInfoTab
-              form={form}
-              onFieldChange={handleFieldChange}
-            />
+              <ManagementInfoTab
+                form={form}
+                onFieldChange={handleFieldChange}
+              />
           </TabsContent>
 
           <TabsContent value="files" className="space-y-6">
-            <FilesTab
-              uploadedFiles={uploadedFiles}
-              onFileUpload={handleFileUpload}
-              onRemoveFile={removeFile}
-            />
+              <FilesTab
+                uploadedFiles={uploadedFiles}
+                onFileUpload={handleFileUpload}
+                onRemoveFile={removeFile}
+              />
           </TabsContent>
 
           {/* 액션 버튼 */}
@@ -296,12 +391,22 @@ export function OrderForm({ initialData, onSubmit, onClose, isLoading = false, m
             <Button
               type="submit"
               disabled={isSubmitting || isLoading || !isFormValid}
+                className={!isFormValid ? "opacity-50 cursor-not-allowed" : ""}
             >
               {isSubmitting ? '저장 중...' : mode === 'edit' ? '수정 완료' : '등록 완료'}
             </Button>
           </div>
         </form>
       </Tabs>
+      )}
+      
+      {/* 프로젝트 생성 다이얼로그 */}
+      <ProjectCreationDialog
+        isOpen={isProjectDialogOpen}
+        onClose={() => setIsProjectDialogOpen(false)}
+        onSubmit={handleProjectCreate}
+        isLoading={isCreatingProject}
+      />
     </div>
   )
 }
