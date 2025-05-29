@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { DollarSign, FileText } from "lucide-react"
-import { Order, OrderFormData, ContaminationItem } from "@/types/order"
+import { Order, OrderFormData, ContaminationItem, OrderWithFileCount } from "@/types/order"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 
@@ -26,7 +26,7 @@ import { orderSchema, getDefaultValues } from "./order-form/types"
 import { formatCurrency, formatNumberWithCommas, parseFormattedNumber, toContaminationArray } from "./order-form/utils"
 
 interface OrderFormProps {
-  initialData?: Order | null
+  initialData?: OrderWithFileCount | null
   onSubmit: (data: OrderFormData, files: File[]) => void
   onClose: () => void
   isLoading?: boolean

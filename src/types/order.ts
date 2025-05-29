@@ -155,3 +155,11 @@ export interface ContaminationItem {
   type: string; // 오염물질명
   value: number; // 농도 (mg/kg)
 }
+
+// 파일 개수 및 요약 보기용 추가 필드를 포함하는 Order 확장 인터페이스
+export interface OrderWithFileCount extends Omit<Order, 'order_type'> {
+  fileCount: number;
+  change_orders?: OrderWithFileCount[]; 
+  all_orders?: OrderWithFileCount[];
+  order_type: OrderType | 'new+change'; 
+}
