@@ -75,7 +75,7 @@ export type Database = {
           remediation_method: string
           contamination_info: string
           verification_company: string
-          status: 'contracted' | 'in_progress' | 'completed' | 'cancelled'
+          status: 'contracted' | 'in_progress' | 'completed' | 'bidding'
           progress_percentage: number
           primary_manager: string
           secondary_manager: string | null
@@ -96,7 +96,7 @@ export type Database = {
           remediation_method: string
           contamination_info: string
           verification_company: string
-          status?: 'contracted' | 'in_progress' | 'completed' | 'cancelled'
+          status?: 'contracted' | 'in_progress' | 'completed' | 'bidding'
           progress_percentage?: number
           primary_manager: string
           secondary_manager?: string | null
@@ -117,7 +117,7 @@ export type Database = {
           remediation_method?: string
           contamination_info?: string
           verification_company?: string
-          status?: 'contracted' | 'in_progress' | 'completed' | 'cancelled'
+          status?: 'contracted' | 'in_progress' | 'completed' | 'bidding'
           progress_percentage?: number
           primary_manager?: string
           secondary_manager?: string | null

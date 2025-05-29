@@ -4,7 +4,7 @@
 export type ClientType = 'government' | 'private'
 export type OrderType = 'new' | 'change1' | 'change2' | 'change3' | 'change4' | 'change5'
 export type TransportType = 'onsite' | 'transport'
-export type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'cancelled'
+export type OrderStatus = 'contracted' | 'in_progress' | 'completed' | 'bidding'
 
 // 수주 메인 인터페이스
 export interface Order {

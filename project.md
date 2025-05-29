@@ -39,54 +39,34 @@
 
 ## 작업 현황
 
-### 2025-01-30 (홈페이지 날씨 기능 및 UI 개선) ✨ NEW
-1. **날씨 홈페이지 구현:**
-   - 대시보드 페이지 삭제하고 홈페이지로 대체 (`src/app/page.tsx`)
-   - OpenWeatherMap API를 활용한 실시간 날씨 정보 표시
-   - 현재 위치 기반 자동 날씨 조회 (GPS 활용)
-   - 도시 검색 기능 및 한국 주요 도시 자동완성
-   - 6일 예보 표시 (OpenWeatherMap 5일 예보 API 활용)
-   - 위치 새로고침 버튼 추가
+### 2025-06-01 (수주 관리 페이지 UI/UX 개선 및 인쇄 기능 최적화) ✨ NEW
+1.  **"신규+변경" 다이얼로그 데이터 유지 문제 해결** (`src/app/orders/page.tsx`):
+    *   "신규+변경" 클릭 시 나타나는 다이얼로그에서 파일 관리 또는 수정 기능 사용 후 내용이 사라지는 문제를 해결하기 위해, `orderGroupDetails` 상태를 추가하고 다이얼로그가 이 상태를 참조하도록 변경했습니다. 관련 다이얼로그 닫힘 로직도 수정했습니다.
 
-2. **날씨 API 구현:**
-   - `/api/weather` 라우트 생성 (`src/app/api/weather/route.ts`)
-   - 좌표 기반 및 도시명 기반 날씨 조회 지원
-   - 현재 날씨와 예보 데이터 병렬 처리로 성능 최적화
-   - 한국어 도시명-영어 매핑 시스템 구현
-   - 영어 날씨 설명을 한글로 번역하는 시스템 구현
+2.  **수주관리 페이지 및 테이블 보기 방식 수정** (`src/app/orders/page.tsx`):
+    *   "향후 대시보드 삽입" 영역을 제거했습니다.
+    *   테이블 오른쪽 상단에 "요약 보기" / "전체 보기" 전환 버튼을 추가했습니다.
+        *   `tableViewMode` 상태 (`summary` | `full`)를 추가했습니다.
+        *   "요약"은 프로젝트별 합산, "전체"는 모든 계약 개별 표시입니다.
+        *   `renderOrderTable` 함수에 `showManagementColumn` 옵션을 추가하여 "관리" 컬럼을 조건부 렌더링하고, `colSpan`을 동적으로 조절했습니다.
+        *   `getSortedData` 함수를 만들어 `tableViewMode`에 따라 다른 데이터 소스(`summaryDisplayOrders` 또는 `filteredOrders`)를 정렬하도록 했습니다.
+    *   **관리 기능 제한**:
+        *   "요약 보기"의 "신규+변경" 다이얼로그 내 테이블에서는 "관리" 컬럼을 숨겼습니다.
+        *   "요약 보기"의 메인 테이블에서는 수정 기능을 비활성화하고, 삭제는 "신규+변경" 행(프로젝트 전체 삭제)에 대해서만 가능하도록 버튼 `disabled` 로직 및 핸들러 함수(`handleEditOrder`, `handleDeleteConfirm`)를 수정했습니다.
+        *   삭제 확인 다이얼로그 메시지를 `tableViewMode`에 따라 다르게 표시하도록 수정했습니다.
+    *   **삭제 로직 변경**: `handleDeleteOrder` 함수를 수정하여, "전체 보기"에서는 ID 기준 단일 계약 삭제, "요약 보기"의 "신규+변경" 행에서는 `project_name` 기준 프로젝트 전체 계약을 삭제하도록 변경했습니다.
 
-3. **도시명 한글화 기능:**
-   - 영어 도시명을 한글로 변환하는 역방향 매핑 객체 추가
-   - `translateCityNameToKorean` 함수로 "Gimpo-si" → "김포" 변환
-   - 특수문자 및 접미사 처리 로직 (si, city 제거)
-   - 주요 한국 도시 80여 개 매핑 데이터 구축
+3.  **"전체 보기" 모드에서 수정 시 데이터 로드 문제 해결** (`src/components/forms/order-form.tsx`):
+    *   수정 모드에서 `OrderForm`의 `initialData` prop이 변경될 때 `form.reset()`이 호출되지 않아 이전 데이터가 남는 문제를 해결하기 위해, `initialData`를 의존성으로 하는 `useEffect`를 추가하여 `form.reset()`을 호출하고 관련 상태(`contractAmountDisplay`, `contaminationList`, `formMode`)를 업데이트하도록 수정했습니다.
 
-4. **강수 정보 기능 추가:**
-   - 현재 날씨에 강수확률과 강수량 정보 추가
-   - 예보 데이터에 강수확률 백분율 표시 (OpenWeatherMap의 pop 필드 활용)
-   - 강수량이 있을 때만 표시하는 조건부 렌더링
-   - CloudRain 아이콘을 활용한 직관적인 UI
+4.  **"변경" 계약 수정 시 "프로젝트명" 로드 문제 해결** (`src/components/forms/order-form/basic-info-tab.tsx`):
+    *   "변경" 탭에서 "프로젝트명" 입력 필드가 `react-hook-form` 상태 대신 로컬 `projectSearch` 상태와 바인딩되어 `initialData`의 프로젝트명이 표시되지 않는 문제를 해결했습니다.
+    *   `projectSearch` 상태의 초기값을 `form.getValues('project_name')`으로 설정하고, `formMode` 또는 `form.watch('project_name')` 변경 시 `projectSearch`를 동기화하는 `useEffect`를 추가했습니다.
 
-5. **UI/UX 개선:**
-   - 현재 날씨와 6일 예보를 파란색 그라데이션 테마로 통일
-   - 2x2 그리드 레이아웃으로 습도, 풍속, 강수확률, 강수량 표시
-   - 예보 카드에 강수확률이 0보다 클 때만 표시
-   - 반응형 디자인으로 모바일 최적화
-   - Framer Motion을 활용한 페이지 전환 애니메이션
-
-6. **사이드바 메뉴 변경:**
-   - "대시보드" 메뉴를 "홈"으로 변경
-   - 로그인 성공 후 홈페이지로 리다이렉션 수정
-
-7. **세션 관리 개선:**
-   - sessionStorage 활용으로 브라우저 종료 시 자동 로그아웃
-   - 로딩 스피너 문제 해결 (AuthProvider 타임아웃 메커니즘)
-   - 서버 사이드 렌더링 시 localStorage 오류 해결
-
-8. **레이아웃 최적화:**
-   - 콘텐츠 영역 전체 너비 활용 (`max-w-6xl` 제거)
-   - 좌우 패딩 조정으로 화면 공간 효율성 증대
-   - 6일 예보 카드 크기 및 폰트 크기 최적화
+5.  **인쇄 영역 지정 및 최적화** (`src/app/orders/page.tsx`, `src/app/globals.css`):
+    *   수주관리 페이지의 메인 `Card`에 `id="printable-orders-area"`를 추가하고, 테이블 컨테이너 div에 `id="orders-table-container"`를 추가했습니다.
+    *   인쇄 버튼, 새 수주 등록 버튼 및 기타 필터 UI 요소들에 `no-print` 클래스를 추가했습니다.
+    *   `globals.css`에 `@media print` 규칙을 추가하여 특정 영역만 인쇄되고, 테이블 내용 전체가 잘리지 않고 보이도록 CSS 스타일을 적용했습니다.
 
 ### 2025-05-30 (수주 관리 페이지 개선 및 파일 업로드 기능 구현 중) ✨ NEW
 1. **고객사 유형 변경**: "공공기관"과 "민간기업"을 "관수"와 "민수"로 변경하였습니다.
